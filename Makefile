@@ -42,6 +42,7 @@ clean:
 .PHONY: install
 install: install-bin
 
+# rm the old binary first in case it's still in use
 install-bin: pangoterm
 	install -d $(DESTDIR)$(BINDIR)
-	$(LIBTOOL) --mode=install cp pangoterm $(DESTDIR)$(BINDIR)/pangoterm
+	$(LIBTOOL) --mode=install cp --remove-destination pangoterm $(DESTDIR)$(BINDIR)/pangoterm
