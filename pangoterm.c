@@ -498,7 +498,7 @@ int term_damage(VTermRect rect, void *user_data)
       vterm_screen_get_cell(pt->vts, pos, &cell);
 
       int cursor_here = pos.row == pt->cursorpos.row && pos.col == pt->cursorpos.col;
-      int cursor_visible = (pt->cursor_visible && pt->cursor_blinkstate) || !pt->has_focus;
+      int cursor_visible = pt->cursor_visible && (pt->cursor_blinkstate || !pt->has_focus);
 
       chpen(&cell, user_data, cursor_visible && cursor_here && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
 
