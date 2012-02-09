@@ -822,6 +822,8 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
 
   vterm_push_bytes(pt->vt, buffer, bytes);
 
+  vterm_screen_flush_damage(pt->vts);
+
   flush_glyphs(pt);
 
   return TRUE;
@@ -882,6 +884,7 @@ int main(int argc, char *argv[])
   pt->vts = vterm_obtain_screen(pt->vt);
   vterm_screen_enable_altscreen(pt->vts, 1);
   vterm_screen_set_callbacks(pt->vts, &cb, pt);
+  vterm_screen_set_damage_merge(pt->vts, VTERM_DAMAGE_SCREEN);
 
   pt->cursor_timer_id = g_timeout_add(cursor_blink_interval, cursor_blink, pt);
   pt->cursor_blinkstate = 1;
