@@ -26,6 +26,9 @@ LDFLAGS +=$(shell pkg-config --libs   vterm)
 CFLAGS  +=$(shell pkg-config --cflags gtk+-2.0)
 LDFLAGS +=$(shell pkg-config --libs   gtk+-2.0)
 
+CFLAGS  +=$(shell pkg-config --cflags cairo)
+LDFLAGS +=$(shell pkg-config --libs   cairo)
+
 PREFIX=/usr/local
 BINDIR=$(PREFIX)/bin
 

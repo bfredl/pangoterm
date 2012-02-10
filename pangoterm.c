@@ -28,6 +28,7 @@
 
 #include "vterm.h"
 
+#include <cairo/cairo.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
 
@@ -80,8 +81,8 @@ typedef struct {
   guint cursor_timer_id;
 
   GtkWidget *termwin;
+  cairo_surface_t *buffer;
 
-  GdkPixmap *buffer;
   GdkDrawable *termdraw;
 } PangoTerm;
 
@@ -165,14 +166,15 @@ VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
 
 static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
 {
-  GdkGC *gc = gdk_gc_new(pt->termdraw);
+  cairo_surface_flush(pt->buffer);
 
-  gdk_gc_set_clip_rectangle(gc, area);
-
+  cairo_t* gc = gdk_cairo_create(pt->termdraw);
+  gdk_cairo_rectangle(gc, area);
+  cairo_clip(gc);
   /* clip rectangle will solve this efficiently */
-  gdk_draw_drawable(pt->termdraw, gc, pt->buffer, 0, 0, 0, 0, -1, -1);
-
-  g_object_unref(gc);
+  cairo_set_source_surface(gc, pt->buffer, 0, 0);
+  cairo_paint(gc);
+  cairo_destroy(gc);
 }
 
 static void flush_glyphs(PangoTerm *pt)
@@ -182,9 +184,9 @@ static void flush_glyphs(PangoTerm *pt)
     pt->glyph_area.height = 0;
     return;
   }
-
-  GdkGC *gc = gdk_gc_new(pt->buffer);
-  gdk_gc_set_clip_rectangle(gc, &pt->glyph_area);
+  cairo_t* gc = cairo_create(pt->buffer);
+  gdk_cairo_rectangle(gc, &pt->glyph_area);
+  cairo_clip(gc);
 
   PangoLayout *layout = pt->pen.layout;
 
@@ -217,25 +219,17 @@ static void flush_glyphs(PangoTerm *pt)
 
   pango_layout_iter_free(iter);
 
+  /* Background fill */
   GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
-  gdk_gc_set_rgb_fg_color(gc, &bg);
+  gdk_cairo_set_source_color(gc, &bg);
+  cairo_paint(gc);
 
-  gdk_draw_rectangle(pt->buffer,
-      gc,
-      TRUE,
-      pt->glyph_area.x,
-      pt->glyph_area.y,
-      pt->glyph_area.width,
-      pt->glyph_area.height);
-
-  gdk_draw_layout_with_colors(pt->buffer,
-      gc,
-      pt->glyph_area.x,
-      pt->glyph_area.y,
-      layout,
-      pt->pen.attrs.reverse ? &pt->pen.bg_col : &pt->pen.fg_col,
-      NULL);
-
+  /* Draw glyphs */
+  GdkColor fg = pt->pen.attrs.reverse ? pt->pen.bg_col : pt->pen.fg_col;
+  gdk_cairo_set_source_color(gc, &fg);
+  cairo_move_to(gc, pt->glyph_area.x, pt->glyph_area.y);
+  pango_cairo_show_layout(gc, layout);
+  /* Flush our changes */
   blit_buffer(pt, &pt->glyph_area);
 
   pt->glyph_area.width = 0;
@@ -243,7 +237,7 @@ static void flush_glyphs(PangoTerm *pt)
 
   g_string_truncate(pt->glyphs, 0);
 
-  g_object_unref(gc);
+  cairo_destroy(gc);
 }
 
 gboolean term_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
@@ -373,7 +367,7 @@ int term_erase(VTermRect rect, void *user_data)
   PangoTerm *pt = user_data;
   flush_glyphs(pt);
 
-  GdkGC *gc = gdk_gc_new(pt->termdraw);
+  cairo_t *gc = cairo_create(pt->buffer);
 
   GdkRectangle destarea = {
     .x      = rect.start_col * pt->cell_width,
@@ -381,22 +375,16 @@ int term_erase(VTermRect rect, void *user_data)
     .width  = (rect.end_col - rect.start_col) * pt->cell_width,
     .height = (rect.end_row - rect.start_row) * pt->cell_height,
   };
-  gdk_gc_set_clip_rectangle(gc, &destarea);
+  gdk_cairo_rectangle(gc, &destarea);
+  cairo_clip(gc);
 
   GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
-  gdk_gc_set_rgb_fg_color(gc, &bg);
-
-  gdk_draw_rectangle(pt->buffer,
-      gc,
-      TRUE,
-      destarea.x,
-      destarea.y,
-      destarea.width,
-      destarea.height);
+  gdk_cairo_set_source_color(gc, &bg);
+  cairo_paint(gc);
+  cairo_destroy(gc);
 
   blit_buffer(pt, &destarea);
 
-  g_object_unref(gc);
 
   return 1;
 }
@@ -518,7 +506,7 @@ int term_damage(VTermRect rect, void *user_data)
       if(cursor_visible && cursor_here && pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
         flush_glyphs(pt);
 
-        GdkGC *gc = gdk_gc_new(pt->termdraw);
+        cairo_t *gc = gdk_cairo_create(pt->termdraw);
 
         GdkRectangle destarea = {
           .x      = pos.col * pt->cell_width,
@@ -526,24 +514,24 @@ int term_damage(VTermRect rect, void *user_data)
           .width  = pt->cell_width,
           .height = pt->cell_height,
         };
-        gdk_gc_set_clip_rectangle(gc, &destarea);
+        gdk_cairo_rectangle(gc, &destarea);
+        cairo_clip(gc);
 
         switch(pt->cursor_shape) {
         case VTERM_PROP_CURSORSHAPE_UNDERLINE:
-          gdk_gc_set_rgb_fg_color(gc, &pt->cursor_col);
-          gdk_draw_rectangle(pt->buffer,
-              gc,
-              TRUE,
+          gdk_cairo_set_source_color(gc, &pt->cursor_col);
+          cairo_rectangle(gc,  
               destarea.x,
               destarea.y + (int)(destarea.height * 0.85),
               destarea.width,
               (int)(destarea.height * 0.15));
+          cairo_fill(gc);
           break;
         }
 
         blit_buffer(pt, &destarea);
 
-        g_object_unref(gc);
+        cairo_destroy(gc);
       }
 
       col += cell.width;
@@ -585,22 +573,18 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
     .width  = (dest.end_col - dest.start_col) * pt->cell_width,
     .height = (dest.end_row - dest.start_row) * pt->cell_height,
   };
+  
+  cairo_surface_flush(pt->buffer);
+  cairo_t* gc = cairo_create(pt->buffer);
+  gdk_cairo_rectangle(gc, &destarea);
+  cairo_clip(gc);
+  cairo_set_source_surface(gc, 
+      pt->buffer, 
+      (dest.start_col - src.start_col) * pt->cell_width, 
+      (dest.start_row - src.start_row) * pt->cell_height);
+  cairo_paint(gc);
 
-  GdkGC *gc = gdk_gc_new(pt->buffer);
-  gdk_gc_set_clip_rectangle(gc, &destarea);
-
-  gdk_draw_drawable(pt->buffer,
-      gc,
-      pt->buffer,
-      src.start_col * pt->cell_width,
-      src.start_row * pt->cell_height,
-      destarea.x,
-      destarea.y,
-      destarea.width,
-      destarea.height);
-
-  g_object_unref(gc);
-
+  cairo_destroy(gc);
   blit_buffer(pt, &destarea);
 
   if(pt->cursor_visible && pt->cursor_blinkstate &&
@@ -741,20 +725,17 @@ void term_resize(GtkContainer* widget, gpointer user_data)
   struct winsize size = { lines, cols, 0, 0 };
   ioctl(pt->master, TIOCSWINSZ, &size);
 
-  GdkPixmap *new_buffer = gdk_pixmap_new(pt->termdraw,
-      cols  * pt->cell_width,
-      lines * pt->cell_height,
-      -1);
+  cairo_surface_t* new_buffer = gdk_window_create_similar_surface(pt->termdraw,
+      CAIRO_CONTENT_COLOR,
+      cols * pt->cell_width,
+      lines * pt->cell_height);
 
-  GdkGC *gc = gdk_gc_new(new_buffer);
-  gdk_draw_drawable(new_buffer,
-      gc,
-      pt->buffer,
-      0, 0, 0, 0, -1, -1);
+  cairo_t* gc = cairo_create(new_buffer);
+  cairo_set_source_surface(gc, pt->buffer, 0, 0);
+  cairo_paint(gc);
+  cairo_destroy(gc);
 
-  g_object_unref(gc);
-
-  g_object_unref(pt->buffer);
+  cairo_surface_destroy(pt->buffer);
   pt->buffer = new_buffer;
 
   vterm_set_size(pt->vt, lines, cols);
@@ -878,7 +859,7 @@ int main(int argc, char *argv[])
 
   GdkColormap* colormap = gdk_colormap_get_system();
   gdk_rgb_find_color(colormap, &gdk_col);
-  gdk_window_set_background(pt->termwin->window, &gdk_col);
+  gdk_window_set_background(pt->termdraw, &gdk_col);
   vterm_state_set_default_colors(vterm_obtain_state(pt->vt), &col_fg, &col_bg);
 
   pt->vts = vterm_obtain_screen(pt->vt);
@@ -902,8 +883,8 @@ int main(int argc, char *argv[])
   pt->im_context = gtk_im_context_simple_new();
 
   g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(im_commit), pt);
-
-  PangoContext *pctx = gtk_widget_get_pango_context(pt->termwin);
+  cairo_t *cctx = gdk_cairo_create(pt->termdraw);
+  PangoContext *pctx = pango_cairo_create_context(cctx);
 
   PangoFontDescription *fontdesc = pango_font_description_new();
   pango_font_description_set_family(fontdesc, default_font);
@@ -912,7 +893,7 @@ int main(int argc, char *argv[])
   pango_context_set_font_description(pctx, fontdesc);
 
   pt->pen.pangoattrs = pango_attr_list_new();
-  pt->pen.layout = pango_layout_new(gtk_widget_get_pango_context(pt->termwin));
+  pt->pen.layout = pango_layout_new(pctx);
   pango_layout_set_font_description(pt->pen.layout, fontdesc);
 
   PangoFontMetrics *metrics = pango_context_get_metrics(pctx,
@@ -930,11 +911,10 @@ int main(int argc, char *argv[])
   gtk_window_resize(GTK_WINDOW(pt->termwin), 
       size.ws_col * pt->cell_width, size.ws_row * pt->cell_height);
 
-  pt->buffer = gdk_pixmap_new(pt->termdraw,
+  pt->buffer = gdk_window_create_similar_surface(pt->termdraw,
+      CAIRO_CONTENT_COLOR,
       size.ws_col * pt->cell_width,
-      size.ws_row * pt->cell_height,
-      -1);
-
+      size.ws_row * pt->cell_height);
   gdk_color_parse(cursor_col_str, &pt->cursor_col);
 
   GdkGeometry hints;
