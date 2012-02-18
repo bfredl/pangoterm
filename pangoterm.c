@@ -329,6 +329,27 @@ gboolean term_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user
   return FALSE;
 }
 
+gboolean term_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  int col = event->x / pt->cell_width;
+  int row = event->y / pt->cell_height;
+
+  /* If the mouse is being dragged, we'll get motion events even outside our
+   * window */
+  if(col < 0 || col >= cols || row < 0 || row >= lines)
+    return FALSE;
+
+  /* Shift modifier bypasses terminal mouse handling */
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    (*pt->mousefunc)(col, row, 0, 0, pt->mousedata);
+    term_flush_output(pt);
+  }
+
+  return FALSE;
+}
+
 gboolean im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -897,7 +918,7 @@ int main(int argc, char *argv[])
   g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(term_keypress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(term_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(term_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(term_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(term_mousemove), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  GTK_SIGNAL_FUNC(term_focus_in),  pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(term_focus_out), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(term_quit), pt);
