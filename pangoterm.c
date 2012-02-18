@@ -603,11 +603,12 @@ int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
   PangoTerm *pt = user_data;
 
   pt->cursorpos = pos;
-  pt->cursor_visible = visible;
   pt->cursor_blinkstate = 1;
 
-  damagecell(pt, oldpos);
-  damagecell(pt, pos);
+  if(pt->cursor_visible) {
+    damagecell(pt, oldpos);
+    damagecell(pt, pos);
+  }
 
   return 1;
 }
@@ -801,11 +802,22 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
     printf("\n");
 #endif
 
+  /* Hide cursor during damage flush */
+
+  int was_cursor_visible = pt->cursor_visible;
+  pt->cursor_visible = 0;
+  damagecell(pt, pt->cursorpos);
+
   vterm_push_bytes(pt->vt, buffer, bytes);
 
   vterm_screen_flush_damage(pt->vts);
 
   flush_glyphs(pt);
+
+  if(was_cursor_visible) {
+    pt->cursor_visible = 1;
+    damagecell(pt, pt->cursorpos);
+  }
 
   return TRUE;
 }
