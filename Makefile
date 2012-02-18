@@ -32,14 +32,22 @@ LDFLAGS +=$(shell pkg-config --libs   cairo)
 PREFIX=/usr/local
 BINDIR=$(PREFIX)/bin
 
+CFILES=$(wildcard *.c)
+OBJECTS=$(CFILES:.c=.lo)
+
 all: pangoterm
 
-pango%: pango%.c
+pangoterm: $(OBJECTS)
 	@echo LINK $@
 	@$(LIBTOOL) --mode=link --tag=CC $(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+%.lo: %.c
+	@echo CC $<
+	@$(LIBTOOL) --mode=compile --tag=CC $(CC) $(CFLAGS) -o $@ -c $<
+
 .PHONY: clean
 clean:
+	$(LIBTOOL) --mode=clean rm -f $(OBJECTS)
 	$(LIBTOOL) --mode=clean rm -f pangoterm
 
 .PHONY: install
