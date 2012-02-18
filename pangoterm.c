@@ -250,6 +250,16 @@ static void term_flush_output(PangoTerm *pt)
   }
 }
 
+static void term_push_string(PangoTerm *pt, gchar *str)
+{
+  while(str && str[0]) {
+    vterm_input_push_char(pt->vt, 0, g_utf8_get_char(str));
+    str = g_utf8_next_char(str);
+  }
+
+  term_flush_output(pt);
+}
+
 gboolean term_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -316,12 +326,7 @@ gboolean im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
-  while(str && str[0]) {
-    vterm_input_push_char(pt->vt, 0, g_utf8_get_char(str));
-    str = g_utf8_next_char(str);
-  }
-
-  term_flush_output(pt);
+  term_push_string(pt, str);
 
   return FALSE;
 }
