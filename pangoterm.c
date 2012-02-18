@@ -240,6 +240,16 @@ static void flush_glyphs(PangoTerm *pt)
   cairo_destroy(gc);
 }
 
+static void term_flush_output(PangoTerm *pt)
+{
+  size_t bufflen = vterm_output_bufferlen(pt->vt);
+  if(bufflen) {
+    char buffer[bufflen];
+    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
+    write(pt->master, buffer, bufflen);
+  }
+}
+
 gboolean term_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -275,12 +285,7 @@ gboolean term_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data
   else
     return FALSE;
 
-  size_t bufflen = vterm_output_bufferlen(pt->vt);
-  if(bufflen) {
-    char buffer[bufflen];
-    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
-    write(pt->master, buffer, bufflen);
-  }
+  term_flush_output(pt);
 
   return FALSE;
 }
@@ -302,12 +307,7 @@ gboolean term_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user
 
   (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
 
-  size_t bufflen = vterm_output_bufferlen(pt->vt);
-  if(bufflen) {
-    char buffer[bufflen];
-    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
-    write(pt->master, buffer, bufflen);
-  }
+  term_flush_output(pt);
 
   return FALSE;
 }
@@ -321,12 +321,7 @@ gboolean im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
     str = g_utf8_next_char(str);
   }
 
-  size_t bufflen = vterm_output_bufferlen(pt->vt);
-  if(bufflen) {
-    char buffer[bufflen];
-    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
-    write(pt->master, buffer, bufflen);
-  }
+  term_flush_output(pt);
 
   return FALSE;
 }
