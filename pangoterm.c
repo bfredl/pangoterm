@@ -84,6 +84,8 @@ typedef struct {
   cairo_surface_t *buffer;
 
   GdkDrawable *termdraw;
+
+  GtkClipboard *primary_clipboard;
 } PangoTerm;
 
 static char *default_fg = "gray90";
@@ -304,9 +306,6 @@ gboolean term_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user
 {
   PangoTerm *pt = user_data;
 
-  if(!pt->mousefunc)
-    return FALSE;
-
   int col = event->x / pt->cell_width;
   int row = event->y / pt->cell_height;
 
@@ -315,9 +314,17 @@ gboolean term_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user
   if(col < 0 || col >= cols || row < 0 || row >= lines)
     return FALSE;
 
-  (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
+  /* Shift modifier bypasses terminal mouse handling */
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
+    term_flush_output(pt);
+  }
+  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS) {
+    /* Middle-click paste */
+    gchar *str = gtk_clipboard_wait_for_text(pt->primary_clipboard);
 
-  term_flush_output(pt);
+    term_push_string(pt, str);
+  }
 
   return FALSE;
 }
@@ -678,9 +685,9 @@ int term_setmousefunc(VTermMouseFunc func, void *data, void *user_data)
   GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
 
   if(func)
-    mask |= GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK;
+    mask |= GDK_POINTER_MOTION_MASK;
   else
-    mask &= ~(GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK);
+    mask &= ~(GDK_POINTER_MOTION_MASK);
 
   gdk_window_set_events(pt->termwin->window, mask);
 
@@ -883,6 +890,9 @@ int main(int argc, char *argv[])
   pt->cursor_blinkstate = 1;
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
+  GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
+  gdk_window_set_events(pt->termwin->window, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK);
+
   g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(term_expose), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(term_keypress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(term_mousepress), pt);
@@ -939,6 +949,8 @@ int main(int argc, char *argv[])
   gtk_window_set_resizable(GTK_WINDOW(pt->termwin), TRUE);
   gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
   g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(term_resize), pt);
+
+  pt->primary_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
 
   /* None of the docs about termios explain how to construct a new one of
    * these, so this is largely a guess */
