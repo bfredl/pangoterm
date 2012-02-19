@@ -499,10 +499,8 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
   }
 }
 
-int term_damage(VTermRect rect, void *user_data)
+static void repaint_rect(PangoTerm *pt, VTermRect rect)
 {
-  PangoTerm *pt = user_data;
-
   for(int row = rect.start_row; row < rect.end_row; row++) {
     for(int col = rect.start_col; col < rect.end_col; ) {
       VTermPos pos = {
@@ -516,7 +514,7 @@ int term_damage(VTermRect rect, void *user_data)
       int cursor_here = pos.row == pt->cursorpos.row && pos.col == pt->cursorpos.col;
       int cursor_visible = pt->cursor_visible && (pt->cursor_blinkstate || !pt->has_focus);
 
-      chpen(&cell, user_data, cursor_visible && cursor_here && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
+      chpen(&cell, pt, cursor_visible && cursor_here && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
 
       if(cell.chars[0] == 0) {
         VTermRect here = {
@@ -525,10 +523,10 @@ int term_damage(VTermRect rect, void *user_data)
           .start_col = col,
           .end_col   = col + 1,
         };
-        term_erase(here, user_data);
+        term_erase(here, pt);
       }
       else {
-        term_putglyph(cell.chars, cell.width, pos, user_data);
+        term_putglyph(cell.chars, cell.width, pos, pt);
       }
 
       if(cursor_visible && cursor_here && pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
@@ -565,11 +563,9 @@ int term_damage(VTermRect rect, void *user_data)
       col += cell.width;
     }
   }
-
-  return 1;
 }
 
-static void damagecell(PangoTerm *pt, VTermPos pos)
+static void repaint_cell(PangoTerm *pt, VTermPos pos)
 {
   VTermRect rect = {
     .start_col = pos.col,
@@ -578,7 +574,16 @@ static void damagecell(PangoTerm *pt, VTermPos pos)
     .end_row   = pos.row + 1,
   };
 
-  term_damage(rect, pt);
+  repaint_rect(pt, rect);
+}
+
+int term_damage(VTermRect rect, void *user_data)
+{
+  PangoTerm *pt = user_data;
+
+  repaint_rect(pt, rect);
+
+  return 1;
 }
 
 int term_moverect(VTermRect dest, VTermRect src, void *user_data)
@@ -590,7 +595,7 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
      (pt->cursorpos.row >= src.start_row && pt->cursorpos.row < src.end_row)) {
     /* Hide cursor before reading source area */
     pt->cursor_visible = 0;
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
     flush_glyphs(pt);
     pt->cursor_visible = 1;
   }
@@ -619,7 +624,7 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
      (pt->cursorpos.col >= dest.start_col && pt->cursorpos.col < dest.end_col) &&
      (pt->cursorpos.row >= dest.start_row && pt->cursorpos.row < dest.end_row)) {
     /* Show cursor after writing dest area */
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
     flush_glyphs(pt);
   }
 
@@ -634,8 +639,8 @@ int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
   pt->cursor_blinkstate = 1;
 
   if(pt->cursor_visible) {
-    damagecell(pt, oldpos);
-    damagecell(pt, pos);
+    repaint_cell(pt, oldpos);
+    repaint_cell(pt, pos);
   }
 
   return 1;
@@ -648,7 +653,7 @@ gboolean cursor_blink(void *user_data)
   pt->cursor_blinkstate = !pt->cursor_blinkstate;
 
   if(pt->cursor_visible) {
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
 
     flush_glyphs(pt);
   }
@@ -663,7 +668,7 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
   switch(prop) {
   case VTERM_PROP_CURSORVISIBLE:
     pt->cursor_visible = val->boolean;
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
     break;
 
   case VTERM_PROP_CURSORBLINK:
@@ -678,7 +683,7 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
 
   case VTERM_PROP_CURSORSHAPE:
     pt->cursor_shape = val->number;
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
     break;
 
   case VTERM_PROP_ICONNAME:
@@ -778,7 +783,7 @@ void term_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
   pt->has_focus = 1;
 
   if(pt->cursor_visible) {
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
 
     flush_glyphs(pt);
   }
@@ -790,7 +795,7 @@ void term_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
   pt->has_focus = 0;
 
   if(pt->cursor_visible) {
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
 
     flush_glyphs(pt);
   }
@@ -834,7 +839,7 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
 
   int was_cursor_visible = pt->cursor_visible;
   pt->cursor_visible = 0;
-  damagecell(pt, pt->cursorpos);
+  repaint_cell(pt, pt->cursorpos);
 
   vterm_push_bytes(pt->vt, buffer, bytes);
 
@@ -844,7 +849,7 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
 
   if(was_cursor_visible) {
     pt->cursor_visible = 1;
-    damagecell(pt, pt->cursorpos);
+    repaint_cell(pt, pt->cursorpos);
   }
 
   return TRUE;
