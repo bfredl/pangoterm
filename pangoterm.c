@@ -88,6 +88,17 @@ typedef struct {
 
   GdkDrawable *termdraw;
 
+  /* These four positions relate to the click/drag highlight state
+   * row == -1 for invalid */
+
+  /* Initial mouse position of selection drag */
+  VTermPos drag_start;
+  /* Current mouse position of selection drag */
+  VTermPos drag_pos;
+  /* Start and stop bounds of the selection */
+  VTermPos highlight_start;
+  VTermPos highlight_stop;
+
   GtkClipboard *primary_clipboard;
 } PangoTerm;
 
@@ -191,6 +202,14 @@ static void term_push_string(PangoTerm *pt, gchar *str)
   }
 
   term_flush_output(pt);
+}
+
+static int cmp_positions(VTermPos a, VTermPos b) 
+{
+  if(a.row == b.row)
+    return a.col - b.col;
+  else
+    return a.row - b.row;
 }
 
 /*
@@ -417,6 +436,18 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
       VTermScreenCell cell;
       vterm_screen_get_cell(pt->vts, pos, &cell);
 
+      /* Invert the RV attribute if this cell is selected */
+      if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
+        VTermPos start = pt->highlight_start,
+                 stop  = pt->highlight_stop;
+
+        int highlighted = (pos.row > start.row || (pos.row == start.row && pos.col >= start.col)) &&
+                          (pos.row < stop.row  || (pos.row == stop.row  && pos.col <= stop.col));
+
+        if(highlighted)
+          cell.attrs.reverse = !cell.attrs.reverse;
+      }
+
       int cursor_here = pos.row == pt->cursorpos.row && pos.col == pt->cursorpos.col;
       int cursor_visible = pt->cursor_visible && (pt->cursor_blinkstate || !pt->has_focus);
 
@@ -481,6 +512,40 @@ static void repaint_cell(PangoTerm *pt, VTermPos pos)
   };
 
   repaint_rect(pt, rect);
+}
+
+static void repaint_flow(PangoTerm *pt, VTermPos start, VTermPos stop)
+{
+  VTermRect rect;
+
+  if(start.row == stop.row) {
+    rect.start_col = start.col;
+    rect.start_row = start.row;
+    rect.end_col   = stop.col + 1;
+    rect.end_row   = start.row + 1;
+    repaint_rect(pt, rect);
+  }
+  else {
+    rect.start_col = start.col;
+    rect.start_row = start.row;
+    rect.end_col   = pt->cols;
+    rect.end_row   = start.row + 1;
+    repaint_rect(pt, rect);
+
+    if(start.row + 1 < stop.row) {
+      rect.start_col = 0;
+      rect.start_row = start.row + 1;
+      rect.end_col   = pt->cols;
+      rect.end_row   = stop.row;
+      repaint_rect(pt, rect);
+    }
+
+    rect.start_col = 0;
+    rect.start_row = stop.row;
+    rect.end_col   = stop.col + 1;
+    rect.end_row   = stop.row + 1;
+    repaint_rect(pt, rect);
+  }
 }
 
 static gboolean cursor_blink(void *user_data)
@@ -618,15 +683,6 @@ int term_setmousefunc(VTermMouseFunc func, void *data, void *user_data)
   pt->mousefunc = func;
   pt->mousedata = data;
 
-  GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
-
-  if(func)
-    mask |= GDK_POINTER_MOTION_MASK;
-  else
-    mask &= ~(GDK_POINTER_MOTION_MASK);
-
-  gdk_window_set_events(pt->termwin->window, mask);
-
   return 1;
 }
 
@@ -650,6 +706,99 @@ static VTermScreenCallbacks cb = {
 /*
  * GTK widget event handlers
  */
+
+void widget_get_clipboard(GtkClipboard *clipboard, GtkSelectionData *data, guint info, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  VTermPos start = pt->highlight_start,
+           stop  = pt->highlight_stop;
+
+  size_t strlen = 0;
+  uint32_t *chars = NULL;
+
+  // This logic looks so similar each time it's easier to loop it
+  while(1) {
+    size_t thislen = 0;
+
+    VTermRect rect;
+    if(start.row == stop.row) {
+      rect.start_row = start.row;
+      rect.start_col = start.col;
+      rect.end_row   = start.row + 1;
+      rect.end_col   = stop.col + 1;
+      thislen += vterm_screen_get_chars(pt->vts,
+          chars ? chars  + thislen : NULL,
+          chars ? strlen - thislen : 0,
+          rect);
+    }
+    else {
+      rect.start_row = start.row;
+      rect.start_col = start.col;
+      rect.end_row   = start.row + 1;
+      rect.end_col   = pt->cols;
+      thislen += vterm_screen_get_chars(pt->vts,
+          chars ? chars  + thislen : NULL,
+          chars ? strlen - thislen : 0,
+          rect);
+
+      thislen += 1;
+      if(chars)
+        chars[thislen - 1] = 0x0a;
+
+      for(int row = start.row + 1; row < stop.row; row++) {
+        rect.start_row = row;
+        rect.start_col = 0;
+        rect.end_row   = row + 1;
+        rect.end_col   = pt->cols;
+
+        thislen += vterm_screen_get_chars(pt->vts,
+            chars ? chars  + thislen : NULL,
+            chars ? strlen - thislen : 0,
+            rect);
+
+        thislen += 1;
+        if(chars)
+          chars[thislen - 1] = 0x0a;
+      }
+
+      rect.start_row = stop.row;
+      rect.start_col = 0;
+      rect.end_row   = stop.row + 1;
+      rect.end_col   = stop.col + 1;
+      thislen += vterm_screen_get_chars(pt->vts,
+          chars ? chars  + thislen : NULL,
+          chars ? strlen - thislen : 0,
+          rect);
+    }
+
+    if(chars)
+      break;
+
+    strlen = thislen;
+    chars = malloc(sizeof(uint32_t) * strlen);
+  }
+
+  char *chars_str = g_ucs4_to_utf8(chars, strlen, NULL, NULL, NULL);
+  free(chars);
+
+  gtk_selection_data_set_text(data, chars_str, -1);
+
+  free(chars_str);
+}
+
+void widget_clear_clipboard(GtkClipboard *clipboard, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  VTermPos old_start = pt->highlight_start,
+           old_stop  = pt->highlight_stop;
+
+  pt->highlight_start.row = -1;
+  pt->highlight_stop.row  = -1;
+
+  repaint_flow(pt, old_start, old_stop);
+}
 
 gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
@@ -714,6 +863,28 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
 
     term_push_string(pt, str);
   }
+  else if(event->button == 1 && event->type == GDK_BUTTON_PRESS) {
+    if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
+      gtk_clipboard_clear(pt->primary_clipboard);
+    }
+
+    pt->drag_start.row = row;
+    pt->drag_start.col = col;
+    pt->drag_pos.row = -1;
+  }
+  else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->drag_pos.row != -1) {
+    pt->drag_start.row = -1;
+    pt->drag_pos.row   = -1;
+
+    GtkTargetEntry info = {
+      .target = "UTF8_STRING",
+      .flags  = 0,
+      .info   = 0,
+    };
+
+    gtk_clipboard_set_with_data(pt->primary_clipboard,
+        &info, 1, widget_get_clipboard, widget_clear_clipboard, pt);
+  }
 
   return FALSE;
 }
@@ -734,6 +905,28 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
     (*pt->mousefunc)(col, row, 0, 0, pt->mousedata);
     term_flush_output(pt);
+  }
+  else if(event->state & GDK_BUTTON1_MASK) {
+    VTermPos old_end = pt->drag_pos;
+    if(old_end.row == -1)
+      old_end = pt->drag_start;
+
+    pt->drag_pos.row = row;
+    pt->drag_pos.col = col;
+
+    if(cmp_positions(pt->drag_start, pt->drag_pos) > 0) {
+      pt->highlight_start = pt->drag_pos;
+      pt->highlight_stop  = pt->drag_start;
+    }
+    else {
+      pt->highlight_start = pt->drag_start;
+      pt->highlight_stop  = pt->drag_pos;
+    }
+
+    if(cmp_positions(old_end, pt->drag_pos) > 0)
+      repaint_flow(pt, pt->drag_pos, old_end);
+    else
+      repaint_flow(pt, old_end, pt->drag_pos);
   }
 
   return FALSE;
@@ -938,7 +1131,7 @@ int main(int argc, char *argv[])
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
   GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
-  gdk_window_set_events(pt->termwin->window, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK);
+  gdk_window_set_events(pt->termwin->window, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK);
 
   g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(widget_expose), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(widget_keypress), pt);
@@ -996,6 +1189,11 @@ int main(int argc, char *argv[])
   gtk_window_set_resizable(GTK_WINDOW(pt->termwin), TRUE);
   gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
   g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
+
+  pt->drag_start.row      = -1;
+  pt->drag_pos.row        = -1;
+  pt->highlight_start.row = -1;
+  pt->highlight_stop.row  = -1;
 
   pt->primary_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
 
