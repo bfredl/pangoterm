@@ -67,6 +67,9 @@ typedef struct {
 
   int master;
 
+  int rows;
+  int cols;
+
   int cell_width_pango;
   int cell_width;
   int cell_height;
@@ -764,6 +767,9 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   cols = raw_width   / pt->cell_width;
   lines = raw_height / pt->cell_height;
 
+  pt->cols = cols;
+  pt->rows = lines;
+
   struct winsize size = { lines, cols, 0, 0 };
   ioctl(pt->master, TIOCSWINSZ, &size);
 
@@ -885,6 +891,9 @@ int main(int argc, char *argv[])
   struct winsize size = { lines, cols, 0, 0 };
 
   PangoTerm *pt = g_new0(PangoTerm, 1);
+
+  pt->cols = cols;
+  pt->rows = lines;
 
   pt->vt = vterm_new(size.ws_row, size.ws_col);
   vterm_parser_set_utf8(pt->vt, 1);
