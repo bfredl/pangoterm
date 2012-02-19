@@ -119,7 +119,11 @@ static GOptionEntry option_entries[] = {
   { NULL },
 };
 
-VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
+/*
+ * Utility functions
+ */
+
+static VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
 {
   if(gdk_keyval >= GDK_F1 && gdk_keyval <= GDK_F35)
     return VTERM_KEY_FUNCTION(gdk_keyval - GDK_F1 + 1);
@@ -165,6 +169,30 @@ VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
     return VTERM_KEY_NONE;
   }
 }
+
+static void term_flush_output(PangoTerm *pt)
+{
+  size_t bufflen = vterm_output_bufferlen(pt->vt);
+  if(bufflen) {
+    char buffer[bufflen];
+    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
+    write(pt->master, buffer, bufflen);
+  }
+}
+
+static void term_push_string(PangoTerm *pt, gchar *str)
+{
+  while(str && str[0]) {
+    vterm_input_push_char(pt->vt, 0, g_utf8_get_char(str));
+    str = g_utf8_next_char(str);
+  }
+
+  term_flush_output(pt);
+}
+
+/*
+ * Repainting operations
+ */
 
 static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
 {
@@ -242,127 +270,8 @@ static void flush_glyphs(PangoTerm *pt)
   cairo_destroy(gc);
 }
 
-static void term_flush_output(PangoTerm *pt)
+static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos pos)
 {
-  size_t bufflen = vterm_output_bufferlen(pt->vt);
-  if(bufflen) {
-    char buffer[bufflen];
-    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
-    write(pt->master, buffer, bufflen);
-  }
-}
-
-static void term_push_string(PangoTerm *pt, gchar *str)
-{
-  while(str && str[0]) {
-    vterm_input_push_char(pt->vt, 0, g_utf8_get_char(str));
-    str = g_utf8_next_char(str);
-  }
-
-  term_flush_output(pt);
-}
-
-gboolean term_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-  /* GtkIMContext will eat a Shift-Space and not tell us about shift.
-   */
-  gboolean ret = (event->state & GDK_SHIFT_MASK && event->keyval == ' ') ? FALSE
-      : gtk_im_context_filter_keypress(pt->im_context, event);
-
-  if(ret)
-    return TRUE;
-
-  // We don't need to track the state of modifier bits
-  if(event->is_modifier)
-    return FALSE;
-
-  VTermModifier state = VTERM_MOD_NONE;
-  if(event->state & GDK_SHIFT_MASK)
-    state |= VTERM_MOD_SHIFT;
-  if(event->state & GDK_CONTROL_MASK)
-    state |= VTERM_MOD_CTRL;
-  if(event->state & GDK_MOD1_MASK)
-    state |= VTERM_MOD_ALT;
-
-  VTermKey keyval = convert_keyval(event->keyval, &state);
-
-  if(keyval)
-    vterm_input_push_key(pt->vt, state, keyval);
-  else if(event->keyval >= 0x01000000)
-    vterm_input_push_char(pt->vt, state, event->keyval - 0x01000000);
-  else if(event->keyval < 0x0f00)
-    /* event->keyval already contains a Unicode codepoint so that's easy */
-    vterm_input_push_char(pt->vt, state, event->keyval);
-  else
-    return FALSE;
-
-  term_flush_output(pt);
-
-  return FALSE;
-}
-
-gboolean term_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-
-  int col = event->x / pt->cell_width;
-  int row = event->y / pt->cell_height;
-
-  /* If the mouse is being dragged, we'll get motion events even outside our
-   * window */
-  if(col < 0 || col >= cols || row < 0 || row >= lines)
-    return FALSE;
-
-  /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
-    (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
-    term_flush_output(pt);
-  }
-  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS) {
-    /* Middle-click paste */
-    gchar *str = gtk_clipboard_wait_for_text(pt->primary_clipboard);
-
-    term_push_string(pt, str);
-  }
-
-  return FALSE;
-}
-
-gboolean term_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-
-  int col = event->x / pt->cell_width;
-  int row = event->y / pt->cell_height;
-
-  /* If the mouse is being dragged, we'll get motion events even outside our
-   * window */
-  if(col < 0 || col >= cols || row < 0 || row >= lines)
-    return FALSE;
-
-  /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
-    (*pt->mousefunc)(col, row, 0, 0, pt->mousedata);
-    term_flush_output(pt);
-  }
-
-  return FALSE;
-}
-
-gboolean im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-
-  term_push_string(pt, str);
-
-  return FALSE;
-}
-
-int term_putglyph(const uint32_t chars[], int width, VTermPos pos, void *user_data)
-{
-  PangoTerm *pt = user_data;
-
   GdkRectangle destarea = {
     .x      = pos.col * pt->cell_width,
     .y      = pos.row * pt->cell_height,
@@ -386,35 +295,6 @@ int term_putglyph(const uint32_t chars[], int width, VTermPos pos, void *user_da
     gdk_rectangle_union(&destarea, &pt->glyph_area, &pt->glyph_area);
   else
     pt->glyph_area = destarea;
-
-  return 1;
-}
-
-int term_erase(VTermRect rect, void *user_data)
-{
-  PangoTerm *pt = user_data;
-  flush_glyphs(pt);
-
-  cairo_t *gc = cairo_create(pt->buffer);
-
-  GdkRectangle destarea = {
-    .x      = rect.start_col * pt->cell_width,
-    .y      = rect.start_row * pt->cell_height,
-    .width  = (rect.end_col - rect.start_col) * pt->cell_width,
-    .height = (rect.end_row - rect.start_row) * pt->cell_height,
-  };
-  gdk_cairo_rectangle(gc, &destarea);
-  cairo_clip(gc);
-
-  GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
-  gdk_cairo_set_source_color(gc, &bg);
-  cairo_paint(gc);
-  cairo_destroy(gc);
-
-  blit_buffer(pt, &destarea);
-
-
-  return 1;
 }
 
 static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
@@ -499,6 +379,29 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
   }
 }
 
+static void erase_rect(PangoTerm *pt, VTermRect rect)
+{
+  flush_glyphs(pt);
+
+  cairo_t *gc = cairo_create(pt->buffer);
+
+  GdkRectangle destarea = {
+    .x      = rect.start_col * pt->cell_width,
+    .y      = rect.start_row * pt->cell_height,
+    .width  = (rect.end_col - rect.start_col) * pt->cell_width,
+    .height = (rect.end_row - rect.start_row) * pt->cell_height,
+  };
+  gdk_cairo_rectangle(gc, &destarea);
+  cairo_clip(gc);
+
+  GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
+  gdk_cairo_set_source_color(gc, &bg);
+  cairo_paint(gc);
+  cairo_destroy(gc);
+
+  blit_buffer(pt, &destarea);
+}
+
 static void repaint_rect(PangoTerm *pt, VTermRect rect)
 {
   for(int row = rect.start_row; row < rect.end_row; row++) {
@@ -523,10 +426,10 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
           .start_col = col,
           .end_col   = col + 1,
         };
-        term_erase(here, pt);
+        erase_rect(pt, here);
       }
       else {
-        term_putglyph(cell.chars, cell.width, pos, pt);
+        put_glyph(pt, cell.chars, cell.width, pos);
       }
 
       if(cursor_visible && cursor_here && pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
@@ -576,6 +479,25 @@ static void repaint_cell(PangoTerm *pt, VTermPos pos)
 
   repaint_rect(pt, rect);
 }
+
+static gboolean cursor_blink(void *user_data)
+{
+  PangoTerm *pt = user_data;
+
+  pt->cursor_blinkstate = !pt->cursor_blinkstate;
+
+  if(pt->cursor_visible) {
+    repaint_cell(pt, pt->cursorpos);
+
+    flush_glyphs(pt);
+  }
+
+  return TRUE;
+}
+
+/*
+ * VTerm event handlers
+ */
 
 int term_damage(VTermRect rect, void *user_data)
 {
@@ -644,21 +566,6 @@ int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
   }
 
   return 1;
-}
-
-gboolean cursor_blink(void *user_data)
-{
-  PangoTerm *pt = user_data;
-
-  pt->cursor_blinkstate = !pt->cursor_blinkstate;
-
-  if(pt->cursor_visible) {
-    repaint_cell(pt, pt->cursorpos);
-
-    flush_glyphs(pt);
-  }
-
-  return TRUE;
 }
 
 int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
@@ -737,7 +644,108 @@ static VTermScreenCallbacks cb = {
   .bell         = term_bell,
 };
 
-gboolean term_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_data)
+/*
+ * GTK widget event handlers
+ */
+
+gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+  /* GtkIMContext will eat a Shift-Space and not tell us about shift.
+   */
+  gboolean ret = (event->state & GDK_SHIFT_MASK && event->keyval == ' ') ? FALSE
+      : gtk_im_context_filter_keypress(pt->im_context, event);
+
+  if(ret)
+    return TRUE;
+
+  // We don't need to track the state of modifier bits
+  if(event->is_modifier)
+    return FALSE;
+
+  VTermModifier state = VTERM_MOD_NONE;
+  if(event->state & GDK_SHIFT_MASK)
+    state |= VTERM_MOD_SHIFT;
+  if(event->state & GDK_CONTROL_MASK)
+    state |= VTERM_MOD_CTRL;
+  if(event->state & GDK_MOD1_MASK)
+    state |= VTERM_MOD_ALT;
+
+  VTermKey keyval = convert_keyval(event->keyval, &state);
+
+  if(keyval)
+    vterm_input_push_key(pt->vt, state, keyval);
+  else if(event->keyval >= 0x01000000)
+    vterm_input_push_char(pt->vt, state, event->keyval - 0x01000000);
+  else if(event->keyval < 0x0f00)
+    /* event->keyval already contains a Unicode codepoint so that's easy */
+    vterm_input_push_char(pt->vt, state, event->keyval);
+  else
+    return FALSE;
+
+  term_flush_output(pt);
+
+  return FALSE;
+}
+
+gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  int col = event->x / pt->cell_width;
+  int row = event->y / pt->cell_height;
+
+  /* If the mouse is being dragged, we'll get motion events even outside our
+   * window */
+  if(col < 0 || col >= cols || row < 0 || row >= lines)
+    return FALSE;
+
+  /* Shift modifier bypasses terminal mouse handling */
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
+    term_flush_output(pt);
+  }
+  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS) {
+    /* Middle-click paste */
+    gchar *str = gtk_clipboard_wait_for_text(pt->primary_clipboard);
+
+    term_push_string(pt, str);
+  }
+
+  return FALSE;
+}
+
+gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  int col = event->x / pt->cell_width;
+  int row = event->y / pt->cell_height;
+
+  /* If the mouse is being dragged, we'll get motion events even outside our
+   * window */
+  if(col < 0 || col >= cols || row < 0 || row >= lines)
+    return FALSE;
+
+  /* Shift modifier bypasses terminal mouse handling */
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    (*pt->mousefunc)(col, row, 0, 0, pt->mousedata);
+    term_flush_output(pt);
+  }
+
+  return FALSE;
+}
+
+gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  term_push_string(pt, str);
+
+  return FALSE;
+}
+
+gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -746,7 +754,7 @@ gboolean term_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_dat
   return TRUE;
 }
 
-void term_resize(GtkContainer* widget, gpointer user_data)
+void widget_resize(GtkContainer* widget, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -777,7 +785,7 @@ void term_resize(GtkContainer* widget, gpointer user_data)
   return;
 }
 
-void term_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
+void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
@@ -789,7 +797,7 @@ void term_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
   }
 }
 
-void term_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
+void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
@@ -801,10 +809,14 @@ void term_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
   }
 }
 
-void term_quit(GtkContainer* widget, gpointer unused_data)
+void widget_quit(GtkContainer* widget, gpointer unused_data)
 {
   gtk_main_quit();
 }
+
+/*
+ * Misc.
+ */
 
 gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_data)
 {
@@ -919,18 +931,18 @@ int main(int argc, char *argv[])
   GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
   gdk_window_set_events(pt->termwin->window, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK);
 
-  g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(term_expose), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(term_keypress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(term_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(term_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(term_mousemove), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  GTK_SIGNAL_FUNC(term_focus_in),  pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(term_focus_out), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(term_quit), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(widget_expose), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(widget_keypress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(widget_mousemove), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  GTK_SIGNAL_FUNC(widget_focus_in),  pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(widget_focus_out), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(widget_quit), pt);
 
   pt->im_context = gtk_im_context_simple_new();
 
-  g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(im_commit), pt);
+  g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
   cairo_t *cctx = gdk_cairo_create(pt->termdraw);
   PangoContext *pctx = pango_cairo_create_context(cctx);
 
@@ -974,7 +986,7 @@ int main(int argc, char *argv[])
 
   gtk_window_set_resizable(GTK_WINDOW(pt->termwin), TRUE);
   gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
-  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(term_resize), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
 
   pt->primary_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
 
