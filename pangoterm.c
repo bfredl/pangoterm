@@ -581,9 +581,13 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 {
   PangoTerm *pt = user_data;
 
-  if(pt->cursor_visible && pt->cursor_blinkstate &&
+  flush_glyphs(pt);
+
+  int cursor_in_area = pt->cursor_visible && pt->cursor_blinkstate &&
      (pt->cursorpos.col >= src.start_col && pt->cursorpos.col < src.end_col) &&
-     (pt->cursorpos.row >= src.start_row && pt->cursorpos.row < src.end_row)) {
+     (pt->cursorpos.row >= src.start_row && pt->cursorpos.row < src.end_row);
+
+  if(cursor_in_area) {
     /* Hide cursor before reading source area */
     pt->cursor_visible = 0;
     repaint_cell(pt, pt->cursorpos);
@@ -606,9 +610,7 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   cairo_destroy(gc);
   blit_buffer(pt, &destarea);
 
-  if(pt->cursor_visible && pt->cursor_blinkstate &&
-     (pt->cursorpos.col >= dest.start_col && pt->cursorpos.col < dest.end_col) &&
-     (pt->cursorpos.row >= dest.start_row && pt->cursorpos.row < dest.end_row)) {
+  if(cursor_in_area) {
     /* Show cursor after writing dest area */
     repaint_cell(pt, pt->cursorpos);
     flush_glyphs(pt);
