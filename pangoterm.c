@@ -212,6 +212,22 @@ static int cmp_positions(VTermPos a, VTermPos b)
     return a.row - b.row;
 }
 
+#define GDKRECTANGLE_FROM_VTERMRECT(pt, rect)                    \
+  {                                                              \
+    .x      = rect.start_col * pt->cell_width,                   \
+    .y      = rect.start_row * pt->cell_height,                  \
+    .width  = (rect.end_col - rect.start_col) * pt->cell_width,  \
+    .height = (rect.end_row - rect.start_row) * pt->cell_height, \
+  }
+
+#define GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width_mult) \
+  {                                                        \
+    .x      = pos.col * pt->cell_width,                    \
+    .y      = pos.row * pt->cell_height,                   \
+    .width  = pt->cell_width * width_mult,                 \
+    .height = pt->cell_height,                             \
+  }
+
 /*
  * Repainting operations
  */
@@ -294,12 +310,7 @@ static void flush_glyphs(PangoTerm *pt)
 
 static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos pos)
 {
-  GdkRectangle destarea = {
-    .x      = pos.col * pt->cell_width,
-    .y      = pos.row * pt->cell_height,
-    .width  = pt->cell_width * width,
-    .height = pt->cell_height
-  };
+  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width);
 
   if(destarea.y != pt->glyph_area.y || destarea.x != pt->glyph_area.x + pt->glyph_area.width)
     flush_glyphs(pt);
@@ -407,12 +418,7 @@ static void erase_rect(PangoTerm *pt, VTermRect rect)
 
   cairo_t *gc = cairo_create(pt->buffer);
 
-  GdkRectangle destarea = {
-    .x      = rect.start_col * pt->cell_width,
-    .y      = rect.start_row * pt->cell_height,
-    .width  = (rect.end_col - rect.start_col) * pt->cell_width,
-    .height = (rect.end_row - rect.start_row) * pt->cell_height,
-  };
+  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERMRECT(pt, rect);
   gdk_cairo_rectangle(gc, &destarea);
   cairo_clip(gc);
 
@@ -471,12 +477,7 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
 
         cairo_t *gc = gdk_cairo_create(pt->termdraw);
 
-        GdkRectangle destarea = {
-          .x      = pos.col * pt->cell_width,
-          .y      = pos.row * pt->cell_height,
-          .width  = pt->cell_width,
-          .height = pt->cell_height,
-        };
+        GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, 1);
         gdk_cairo_rectangle(gc, &destarea);
         cairo_clip(gc);
 
@@ -590,13 +591,8 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
     pt->cursor_visible = 1;
   }
 
-  GdkRectangle destarea = {
-    .x      = dest.start_col * pt->cell_width,
-    .y      = dest.start_row * pt->cell_height,
-    .width  = (dest.end_col - dest.start_col) * pt->cell_width,
-    .height = (dest.end_row - dest.start_row) * pt->cell_height,
-  };
-  
+  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERMRECT(pt, dest);
+
   cairo_surface_flush(pt->buffer);
   cairo_t* gc = cairo_create(pt->buffer);
   gdk_cairo_rectangle(gc, &destarea);
