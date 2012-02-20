@@ -1118,6 +1118,7 @@ int main(int argc, char *argv[])
   gdk_rgb_find_color(colormap, &gdk_col);
   gdk_window_set_background(pt->termdraw, &gdk_col);
   vterm_state_set_default_colors(vterm_obtain_state(pt->vt), &col_fg, &col_bg);
+  vterm_state_set_bold_highbright(vterm_obtain_state(pt->vt), 1);
 
   pt->vts = vterm_obtain_screen(pt->vt);
   vterm_screen_enable_altscreen(pt->vts, 1);
