@@ -111,6 +111,8 @@ static gint cursor_blink_interval = 500;
 static char *default_font = "DejaVu Sans Mono";
 static int default_size = 9;
 
+static char *default_title = "pangoterm";
+
 static int lines = 25;
 static int cols  = 80;
 
@@ -126,6 +128,8 @@ static GOptionEntry option_entries[] = {
 
   { "font",       0,   0, G_OPTION_ARG_STRING, &default_font, "Font name", "FONT" },
   { "size",       's', 0, G_OPTION_ARG_INT,    &default_size, "Font size", "INT" },
+
+  { "title",      0,   0, G_OPTION_ARG_STRING, &default_title, "Title", "STR" },
 
   { "lines",      0,   0, G_OPTION_ARG_INT,    &lines, "Number of lines", "LINES" },
   { "cols",       0,   0, G_OPTION_ARG_INT,    &cols,  "Number of columns", "COLS" },
@@ -1090,6 +1094,7 @@ int main(int argc, char *argv[])
   vterm_parser_set_utf8(pt->vt, 1);
 
   pt->termwin = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  gtk_window_set_title(GTK_WINDOW(pt->termwin), default_title);
   gtk_widget_set_double_buffered(pt->termwin, FALSE);
 
   pt->glyphs = g_string_sized_new(128);
