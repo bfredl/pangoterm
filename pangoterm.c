@@ -219,7 +219,7 @@ static int cmp_positions(VTermPos a, VTermPos b)
 static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
 {
   size_t strlen = 0;
-  uint32_t *chars = NULL;
+  char *str = NULL;
 
   // This logic looks so similar each time it's easier to loop it
   while(1) {
@@ -231,9 +231,9 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
       rect.start_col = start.col;
       rect.end_row   = start.row + 1;
       rect.end_col   = stop.col + 1;
-      thislen += vterm_screen_get_chars(pt->vts,
-          chars ? chars  + thislen : NULL,
-          chars ? strlen - thislen : 0,
+      thislen += vterm_screen_get_text(pt->vts,
+          str ? str    + thislen : NULL,
+          str ? strlen - thislen : 0,
           rect);
     }
     else {
@@ -241,14 +241,14 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
       rect.start_col = start.col;
       rect.end_row   = start.row + 1;
       rect.end_col   = pt->cols;
-      thislen += vterm_screen_get_chars(pt->vts,
-          chars ? chars  + thislen : NULL,
-          chars ? strlen - thislen : 0,
+      thislen += vterm_screen_get_text(pt->vts,
+          str ? str    + thislen : NULL,
+          str ? strlen - thislen : 0,
           rect);
 
       thislen += 1;
-      if(chars)
-        chars[thislen - 1] = 0x0a;
+      if(str)
+        str[thislen - 1] = 0x0a;
 
       for(int row = start.row + 1; row < stop.row; row++) {
         rect.start_row = row;
@@ -256,35 +256,34 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
         rect.end_row   = row + 1;
         rect.end_col   = pt->cols;
 
-        thislen += vterm_screen_get_chars(pt->vts,
-            chars ? chars  + thislen : NULL,
-            chars ? strlen - thislen : 0,
+        thislen += vterm_screen_get_text(pt->vts,
+            str ? str    + thislen : NULL,
+            str ? strlen - thislen : 0,
             rect);
 
         thislen += 1;
-        if(chars)
-          chars[thislen - 1] = 0x0a;
+        if(str)
+          str[thislen - 1] = 0x0a;
       }
 
       rect.start_row = stop.row;
       rect.start_col = 0;
       rect.end_row   = stop.row + 1;
       rect.end_col   = stop.col + 1;
-      thislen += vterm_screen_get_chars(pt->vts,
-          chars ? chars  + thislen : NULL,
-          chars ? strlen - thislen : 0,
+      thislen += vterm_screen_get_text(pt->vts,
+          str ? str    + thislen : NULL,
+          str ? strlen - thislen : 0,
           rect);
     }
 
-    if(chars)
+    if(str)
       break;
 
     strlen = thislen;
-    chars = malloc(sizeof(uint32_t) * strlen);
+    str = malloc(strlen + 1); // Terminating NUL
   }
 
-  char *str = g_ucs4_to_utf8(chars, strlen, NULL, NULL, NULL);
-  free(chars);
+  str[strlen] = 0;
 
   return str;
 }
