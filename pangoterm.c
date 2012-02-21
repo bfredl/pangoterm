@@ -216,6 +216,79 @@ static int cmp_positions(VTermPos a, VTermPos b)
     return a.row - b.row;
 }
 
+static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
+{
+  size_t strlen = 0;
+  uint32_t *chars = NULL;
+
+  // This logic looks so similar each time it's easier to loop it
+  while(1) {
+    size_t thislen = 0;
+
+    VTermRect rect;
+    if(start.row == stop.row) {
+      rect.start_row = start.row;
+      rect.start_col = start.col;
+      rect.end_row   = start.row + 1;
+      rect.end_col   = stop.col + 1;
+      thislen += vterm_screen_get_chars(pt->vts,
+          chars ? chars  + thislen : NULL,
+          chars ? strlen - thislen : 0,
+          rect);
+    }
+    else {
+      rect.start_row = start.row;
+      rect.start_col = start.col;
+      rect.end_row   = start.row + 1;
+      rect.end_col   = pt->cols;
+      thislen += vterm_screen_get_chars(pt->vts,
+          chars ? chars  + thislen : NULL,
+          chars ? strlen - thislen : 0,
+          rect);
+
+      thislen += 1;
+      if(chars)
+        chars[thislen - 1] = 0x0a;
+
+      for(int row = start.row + 1; row < stop.row; row++) {
+        rect.start_row = row;
+        rect.start_col = 0;
+        rect.end_row   = row + 1;
+        rect.end_col   = pt->cols;
+
+        thislen += vterm_screen_get_chars(pt->vts,
+            chars ? chars  + thislen : NULL,
+            chars ? strlen - thislen : 0,
+            rect);
+
+        thislen += 1;
+        if(chars)
+          chars[thislen - 1] = 0x0a;
+      }
+
+      rect.start_row = stop.row;
+      rect.start_col = 0;
+      rect.end_row   = stop.row + 1;
+      rect.end_col   = stop.col + 1;
+      thislen += vterm_screen_get_chars(pt->vts,
+          chars ? chars  + thislen : NULL,
+          chars ? strlen - thislen : 0,
+          rect);
+    }
+
+    if(chars)
+      break;
+
+    strlen = thislen;
+    chars = malloc(sizeof(uint32_t) * strlen);
+  }
+
+  char *str = g_ucs4_to_utf8(chars, strlen, NULL, NULL, NULL);
+  free(chars);
+
+  return str;
+}
+
 #define GDKRECTANGLE_FROM_VTERMRECT(pt, rect)                    \
   {                                                              \
     .x      = rect.start_col * pt->cell_width,                   \
@@ -713,80 +786,11 @@ void widget_get_clipboard(GtkClipboard *clipboard, GtkSelectionData *data, guint
 {
   PangoTerm *pt = user_data;
 
-  VTermPos start = pt->highlight_start,
-           stop  = pt->highlight_stop;
+  gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
 
-  size_t strlen = 0;
-  uint32_t *chars = NULL;
+  gtk_selection_data_set_text(data, text, -1);
 
-  // This logic looks so similar each time it's easier to loop it
-  while(1) {
-    size_t thislen = 0;
-
-    VTermRect rect;
-    if(start.row == stop.row) {
-      rect.start_row = start.row;
-      rect.start_col = start.col;
-      rect.end_row   = start.row + 1;
-      rect.end_col   = stop.col + 1;
-      thislen += vterm_screen_get_chars(pt->vts,
-          chars ? chars  + thislen : NULL,
-          chars ? strlen - thislen : 0,
-          rect);
-    }
-    else {
-      rect.start_row = start.row;
-      rect.start_col = start.col;
-      rect.end_row   = start.row + 1;
-      rect.end_col   = pt->cols;
-      thislen += vterm_screen_get_chars(pt->vts,
-          chars ? chars  + thislen : NULL,
-          chars ? strlen - thislen : 0,
-          rect);
-
-      thislen += 1;
-      if(chars)
-        chars[thislen - 1] = 0x0a;
-
-      for(int row = start.row + 1; row < stop.row; row++) {
-        rect.start_row = row;
-        rect.start_col = 0;
-        rect.end_row   = row + 1;
-        rect.end_col   = pt->cols;
-
-        thislen += vterm_screen_get_chars(pt->vts,
-            chars ? chars  + thislen : NULL,
-            chars ? strlen - thislen : 0,
-            rect);
-
-        thislen += 1;
-        if(chars)
-          chars[thislen - 1] = 0x0a;
-      }
-
-      rect.start_row = stop.row;
-      rect.start_col = 0;
-      rect.end_row   = stop.row + 1;
-      rect.end_col   = stop.col + 1;
-      thislen += vterm_screen_get_chars(pt->vts,
-          chars ? chars  + thislen : NULL,
-          chars ? strlen - thislen : 0,
-          rect);
-    }
-
-    if(chars)
-      break;
-
-    strlen = thislen;
-    chars = malloc(sizeof(uint32_t) * strlen);
-  }
-
-  char *chars_str = g_ucs4_to_utf8(chars, strlen, NULL, NULL, NULL);
-  free(chars);
-
-  gtk_selection_data_set_text(data, chars_str, -1);
-
-  free(chars_str);
+  free(text);
 }
 
 void widget_clear_clipboard(GtkClipboard *clipboard, gpointer user_data)
