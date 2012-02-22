@@ -640,6 +640,27 @@ static gboolean cursor_blink(void *user_data)
   return TRUE;
 }
 
+static void cursor_start_blinking(PangoTerm *pt)
+{
+  pt->cursor_timer_id = g_timeout_add(cursor_blink_interval, cursor_blink, pt);
+
+  /* Should start blinking in visible state */
+  pt->cursor_blinkstate = 1;
+
+  repaint_cell(pt, pt->cursorpos);
+}
+
+static void cursor_stop_blinking(PangoTerm *pt)
+{
+  g_source_remove(pt->cursor_timer_id);
+  pt->cursor_timer_id = 0;
+
+  /* Should always be in visible state */
+  pt->cursor_blinkstate = 1;
+
+  repaint_cell(pt, pt->cursorpos);
+}
+
 /*
  * VTerm event handlers
  */
@@ -721,13 +742,10 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     break;
 
   case VTERM_PROP_CURSORBLINK:
-    if(val->boolean && !pt->cursor_timer_id) {
-      pt->cursor_timer_id = g_timeout_add(cursor_blink_interval, cursor_blink, pt);
-    }
-    else if(!val->boolean && pt->cursor_timer_id) {
-      g_source_remove(pt->cursor_timer_id);
-      pt->cursor_timer_id = 0;
-    }
+    if(val->boolean && !pt->cursor_timer_id)
+      cursor_start_blinking(pt);
+    else if(!val->boolean && pt->cursor_timer_id)
+      cursor_stop_blinking(pt);
     break;
 
   case VTERM_PROP_CURSORSHAPE:
@@ -1067,6 +1085,8 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
     pt->cursor_visible = 1;
     repaint_cell(pt, pt->cursorpos);
   }
+
+  flush_glyphs(pt);
 
   return TRUE;
 }
