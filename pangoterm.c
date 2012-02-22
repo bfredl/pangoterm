@@ -190,7 +190,7 @@ static VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
 
 static void term_flush_output(PangoTerm *pt)
 {
-  size_t bufflen = vterm_output_bufferlen(pt->vt);
+  size_t bufflen = vterm_output_get_buffer_current(pt->vt);
   if(bufflen) {
     char buffer[bufflen];
     bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
@@ -201,6 +201,10 @@ static void term_flush_output(PangoTerm *pt)
 static void term_push_string(PangoTerm *pt, gchar *str)
 {
   while(str && str[0]) {
+    /* 6 bytes is always enough for any UTF-8 character */
+    if(vterm_output_get_buffer_remaining(pt->vt) < 6)
+      term_flush_output(pt);
+
     vterm_input_push_char(pt->vt, 0, g_utf8_get_char(str));
     str = g_utf8_next_char(str);
   }
