@@ -1131,6 +1131,8 @@ int main(int argc, char *argv[])
 
   pt->termdraw = pt->termwin->window;
 
+  gdk_window_set_cursor(GDK_WINDOW(pt->termdraw), gdk_cursor_new(GDK_XTERM));
+
   GdkColor gdk_col;
   gdk_color_parse(default_fg, &gdk_col);
 
