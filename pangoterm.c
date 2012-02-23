@@ -959,6 +959,30 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
   return FALSE;
 }
 
+gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+
+  int col = event->x / pt->cell_width;
+  int row = event->y / pt->cell_height;
+
+  /* Translate scroll direction back into a button number */
+  int button;
+  switch(event->direction) {
+    case GDK_SCROLL_UP:    button = 4; break;
+    case GDK_SCROLL_DOWN:  button = 5; break;
+    default:
+      return FALSE;
+  }
+
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    (*pt->mousefunc)(col, row, button, 1, pt->mousedata);
+    term_flush_output(pt);
+  }
+
+  return FALSE;
+}
+
 gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -1171,6 +1195,7 @@ int main(int argc, char *argv[])
   g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(widget_mousemove), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  GTK_SIGNAL_FUNC(widget_scroll), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  GTK_SIGNAL_FUNC(widget_focus_in),  pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(widget_focus_out), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(widget_quit), pt);
