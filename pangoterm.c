@@ -1251,7 +1251,7 @@ int main(int argc, char *argv[])
 
   termios.c_cc[VINTR]    = 0x1f & 'C';
   termios.c_cc[VQUIT]    = 0x1f & '\\';
-  termios.c_cc[VERASE]   = 0x1f & 'H';
+  termios.c_cc[VERASE]   = 0x7f;
   termios.c_cc[VKILL]    = 0x1f & 'U';
   termios.c_cc[VEOF]     = 0x1f & 'D';
   termios.c_cc[VEOL]     = _POSIX_VDISABLE;
