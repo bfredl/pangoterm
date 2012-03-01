@@ -1181,7 +1181,7 @@ int main(int argc, char *argv[])
   pt->vts = vterm_obtain_screen(pt->vt);
   vterm_screen_enable_altscreen(pt->vts, 1);
   vterm_screen_set_callbacks(pt->vts, &cb, pt);
-  vterm_screen_set_damage_merge(pt->vts, VTERM_DAMAGE_ROW);
+  vterm_screen_set_damage_merge(pt->vts, VTERM_DAMAGE_SCROLL);
 
   pt->cursor_timer_id = g_timeout_add(cursor_blink_interval, cursor_blink, pt);
   pt->cursor_blinkstate = 1;
