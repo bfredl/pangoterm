@@ -938,6 +938,10 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
     if(old_end.row == -1)
       old_end = pt->drag_start;
 
+    if(row == old_end.row && col == old_end.col)
+      /* Unchanged; stop here */
+      return FALSE;
+
     pt->drag_pos.row = row;
     pt->drag_pos.col = col;
 
