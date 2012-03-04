@@ -665,6 +665,25 @@ static void cursor_stop_blinking(PangoTerm *pt)
   repaint_cell(pt, pt->cursorpos);
 }
 
+static void fetch_clipboard_and_cancel(PangoTerm *pt)
+{
+  VTermPos old_start = pt->highlight_start,
+           old_stop  = pt->highlight_stop;
+
+  pt->highlight_start.row = -1;
+  pt->highlight_stop.row  = -1;
+
+  gchar *text = fetch_flow_text(pt, old_start, old_stop);
+
+  gtk_clipboard_clear(pt->primary_clipboard);
+  gtk_clipboard_set_text(pt->primary_clipboard, text, -1);
+
+  free(text);
+
+  repaint_flow(pt, old_start, old_stop);
+  flush_glyphs(pt);
+}
+
 /*
  * VTerm event handlers
  */
@@ -824,7 +843,10 @@ void widget_clear_clipboard(GtkClipboard *clipboard, gpointer user_data)
   pt->highlight_start.row = -1;
   pt->highlight_stop.row  = -1;
 
-  repaint_flow(pt, old_start, old_stop);
+  if(old_start.row != -1 && old_stop.row != -1) {
+    repaint_flow(pt, old_start, old_stop);
+    flush_glyphs(pt);
+  }
 }
 
 gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
@@ -892,7 +914,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
   }
   else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
     if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
-      gtk_clipboard_clear(pt->primary_clipboard);
+      fetch_clipboard_and_cancel(pt);
     }
 
     pt->drag_start.row = row;
