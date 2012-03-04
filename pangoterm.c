@@ -113,8 +113,8 @@ static int default_size = 9;
 
 static char *default_title = "pangoterm";
 
-static int lines = 25;
-static int cols  = 80;
+static int default_lines = 25;
+static int default_cols  = 80;
 
 static char *alt_fonts[] = {
   "Courier 10 Pitch",
@@ -131,8 +131,8 @@ static GOptionEntry option_entries[] = {
 
   { "title",      0,   0, G_OPTION_ARG_STRING, &default_title, "Title", "STR" },
 
-  { "lines",      0,   0, G_OPTION_ARG_INT,    &lines, "Number of lines", "LINES" },
-  { "cols",       0,   0, G_OPTION_ARG_INT,    &cols,  "Number of columns", "COLS" },
+  { "lines",      0,   0, G_OPTION_ARG_INT,    &default_lines, "Number of lines", "LINES" },
+  { "cols",       0,   0, G_OPTION_ARG_INT,    &default_cols,  "Number of columns", "COLS" },
 
   { NULL },
 };
@@ -876,7 +876,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
-  if(col < 0 || col >= cols || row < 0 || row >= lines)
+  if(col < 0 || col >= pt->cols || row < 0 || row >= pt->rows)
     return FALSE;
 
   /* Shift modifier bypasses terminal mouse handling */
@@ -925,7 +925,7 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
-  if(col < 0 || col >= cols || row < 0 || row >= lines)
+  if(col < 0 || col >= pt->cols || row < 0 || row >= pt->rows)
     return FALSE;
 
   /* Shift modifier bypasses terminal mouse handling */
@@ -1013,19 +1013,19 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   gint raw_width, raw_height;
   gtk_window_get_size(GTK_WINDOW(widget), &raw_width, &raw_height);
 
-  cols = raw_width   / pt->cell_width;
-  lines = raw_height / pt->cell_height;
+  int cols = raw_width  / pt->cell_width;
+  int rows = raw_height / pt->cell_height;
 
   pt->cols = cols;
-  pt->rows = lines;
+  pt->rows = rows;
 
-  struct winsize size = { lines, cols, 0, 0 };
+  struct winsize size = { rows, cols, 0, 0 };
   ioctl(pt->master, TIOCSWINSZ, &size);
 
   cairo_surface_t* new_buffer = gdk_window_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
       cols * pt->cell_width,
-      lines * pt->cell_height);
+      rows * pt->cell_height);
 
   cairo_t* gc = cairo_create(new_buffer);
   cairo_set_source_surface(gc, pt->buffer, 0, 0);
@@ -1035,7 +1035,7 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   cairo_surface_destroy(pt->buffer);
   pt->buffer = new_buffer;
 
-  vterm_set_size(pt->vt, lines, cols);
+  vterm_set_size(pt->vt, rows, cols);
 
   return;
 }
@@ -1139,12 +1139,12 @@ int main(int argc, char *argv[])
 
   gtk_init(&argc, &argv);
 
-  struct winsize size = { lines, cols, 0, 0 };
-
   PangoTerm *pt = g_new0(PangoTerm, 1);
 
-  pt->cols = cols;
-  pt->rows = lines;
+  pt->cols = default_cols;
+  pt->rows = default_lines;
+
+  struct winsize size = { pt->rows, pt->cols, 0, 0 };
 
   pt->vt = vterm_new(size.ws_row, size.ws_col);
   vterm_parser_set_utf8(pt->vt, 1);
