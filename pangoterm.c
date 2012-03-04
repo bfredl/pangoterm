@@ -876,21 +876,21 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
-  if(col < 0 || col >= pt->cols || row < 0 || row >= pt->rows)
-    return FALSE;
+  int is_inside = (col >= 0 && col < pt->cols &&
+                   row >= 0 && row < pt->rows);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
     (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
     term_flush_output(pt);
   }
-  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS) {
+  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
     /* Middle-click paste */
     gchar *str = gtk_clipboard_wait_for_text(pt->primary_clipboard);
 
     term_push_string(pt, str);
   }
-  else if(event->button == 1 && event->type == GDK_BUTTON_PRESS) {
+  else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
     if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
       gtk_clipboard_clear(pt->primary_clipboard);
     }
@@ -900,6 +900,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
     pt->drag_pos.row = -1;
   }
   else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->drag_pos.row != -1) {
+    /* Always accept a release even when outside */
     pt->drag_start.row = -1;
     pt->drag_pos.row   = -1;
 
@@ -925,11 +926,11 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
-  if(col < 0 || col >= pt->cols || row < 0 || row >= pt->rows)
-    return FALSE;
+  int is_inside = (col >= 0 && col < pt->cols &&
+                   row >= 0 && row < pt->rows);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
     (*pt->mousefunc)(col, row, 0, 0, pt->mousedata);
     term_flush_output(pt);
   }
@@ -941,6 +942,11 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
     if(row == old_end.row && col == old_end.col)
       /* Unchanged; stop here */
       return FALSE;
+
+    if(col < 0)         col = 0;
+    if(col > pt->cols)  col = pt->cols; /* allow off-by-1 */
+    if(row < 0)         row = 0;
+    if(row >= pt->rows) row = pt->rows - 1;
 
     pt->drag_pos.row = row;
     pt->drag_pos.col = col;
