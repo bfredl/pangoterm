@@ -5,6 +5,7 @@
 #define _BSD_SOURCE
 
 #include <errno.h>
+#include <locale.h>
 #include <poll.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -14,6 +15,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <wctype.h>
 
 /* suck up the non-standard openpty/forkpty */
 #if defined(__FreeBSD__)
@@ -307,6 +309,11 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
     .width  = pt->cell_width * width_mult,                 \
     .height = pt->cell_height,                             \
   }
+
+static int is_wordchar(uint32_t c)
+{
+  return iswalnum(c) || (c == '_');
+}
 
 /*
  * Repainting operations
@@ -903,7 +910,18 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
 
   /* Shift modifier bypasses terminal mouse handling */
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
-    (*pt->mousefunc)(col, row, event->button, event->type == GDK_BUTTON_PRESS, pt->mousedata);
+    int is_press;
+    switch(event->type) {
+    case GDK_BUTTON_PRESS:
+      is_press = 1;
+      break;
+    case GDK_BUTTON_RELEASE:
+      is_press = 0;
+      break;
+    default:
+      return TRUE;
+    }
+    (*pt->mousefunc)(col, row, event->button, is_press, pt->mousedata);
     term_flush_output(pt);
   }
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
@@ -934,6 +952,54 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
 
     gtk_clipboard_set_with_data(pt->primary_clipboard,
         &info, 1, widget_get_clipboard, widget_clear_clipboard, pt);
+  }
+  else if(event->button == 1 && event->type == GDK_2BUTTON_PRESS && is_inside) {
+    /* Highlight a word. start with the position, and extend it both sides
+     * over word characters
+     */
+    int start_col = col;
+    while(start_col > 0) {
+      VTermPos pos = { .row = row, .col = start_col - 1 };
+      VTermScreenCell cell;
+
+      vterm_screen_get_cell(pt->vts, pos, &cell);
+      if(!is_wordchar(cell.chars[0]))
+        break;
+
+      start_col--;
+    }
+
+    int stop_col = col;
+    while(stop_col < pt->cols) {
+      VTermPos pos = { .row = row, .col = stop_col + 1 };
+      VTermScreenCell cell;
+
+      vterm_screen_get_cell(pt->vts, pos, &cell);
+      if(!is_wordchar(cell.chars[0]))
+        break;
+
+      stop_col++;
+    }
+
+    pt->highlight_start.row = row;
+    pt->highlight_start.col = start_col;
+    pt->highlight_stop.row  = row;
+    pt->highlight_stop.col  = stop_col;
+
+    repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
+
+    flush_glyphs(pt);
+  }
+  else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
+    /* Highlight an entire line */
+    pt->highlight_start.row = row;
+    pt->highlight_start.col = 0;
+    pt->highlight_stop.row  = row;
+    pt->highlight_stop.col  = pt->cols - 1;
+
+    repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
+
+    flush_glyphs(pt);
   }
 
   return FALSE;
@@ -987,6 +1053,8 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
       repaint_flow(pt, pt->drag_pos, old_end);
     else
       repaint_flow(pt, old_end, pt->drag_pos);
+
+    flush_glyphs(pt);
   }
 
   return FALSE;
@@ -1166,6 +1234,7 @@ int main(int argc, char *argv[])
   }
 
   gtk_init(&argc, &argv);
+  setlocale(LC_CTYPE, NULL);
 
   PangoTerm *pt = g_new0(PangoTerm, 1);
 
