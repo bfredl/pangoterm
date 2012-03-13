@@ -217,7 +217,7 @@ static void term_push_string(PangoTerm *pt, gchar *str)
   term_flush_output(pt);
 }
 
-static int cmp_positions(VTermPos a, VTermPos b) 
+static int cmp_positions(VTermPos a, VTermPos b)
 {
   if(a.row == b.row)
     return a.col - b.col;
@@ -574,7 +574,7 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
         switch(pt->cursor_shape) {
         case VTERM_PROP_CURSORSHAPE_UNDERLINE:
           gdk_cairo_set_source_color(gc, &pt->cursor_col);
-          cairo_rectangle(gc,  
+          cairo_rectangle(gc,
               destarea.x,
               destarea.y + (int)(destarea.height * 0.85),
               destarea.width,
@@ -744,9 +744,9 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   cairo_t* gc = cairo_create(pt->buffer);
   gdk_cairo_rectangle(gc, &destarea);
   cairo_clip(gc);
-  cairo_set_source_surface(gc, 
-      pt->buffer, 
-      (dest.start_col - src.start_col) * pt->cell_width, 
+  cairo_set_source_surface(gc,
+      pt->buffer,
+      (dest.start_col - src.start_col) * pt->cell_width,
       (dest.start_row - src.start_row) * pt->cell_height);
   cairo_paint(gc);
 
@@ -1329,7 +1329,7 @@ int main(int argc, char *argv[])
   PangoFontMetrics *metrics = pango_context_get_metrics(pctx,
       pango_context_get_font_description(pctx), pango_context_get_language(pctx));
 
-  int width = (pango_font_metrics_get_approximate_char_width(metrics) + 
+  int width = (pango_font_metrics_get_approximate_char_width(metrics) +
                pango_font_metrics_get_approximate_digit_width(metrics)) / 2;
 
   int height = pango_font_metrics_get_ascent(metrics) + pango_font_metrics_get_descent(metrics);
@@ -1338,7 +1338,7 @@ int main(int argc, char *argv[])
   pt->cell_width  = PANGO_PIXELS_CEIL(width);
   pt->cell_height = PANGO_PIXELS_CEIL(height);
 
-  gtk_window_resize(GTK_WINDOW(pt->termwin), 
+  gtk_window_resize(GTK_WINDOW(pt->termwin),
       size.ws_col * pt->cell_width, size.ws_row * pt->cell_height);
 
   pt->buffer = gdk_window_create_similar_surface(pt->termdraw,
