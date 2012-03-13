@@ -791,6 +791,10 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     gtk_window_set_title(GTK_WINDOW(pt->termwin), val->string);
     break;
 
+  case VTERM_PROP_ALTSCREEN:
+    /* recognised but don't need to do anything here */
+    return 1;
+
   default:
     return 0;
   }
