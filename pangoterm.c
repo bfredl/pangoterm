@@ -77,11 +77,14 @@ typedef struct {
   int cell_height;
 
   int has_focus;
-  int cursor_visible;
-  int cursor_blinkstate;
+  int cursor_visible;    /* VTERM_PROP_CURSORVISIBLE */
+  int cursor_blinkstate; /* during high state of blink */
+  int cursor_hidden_for_redraw; /* true to temporarily hide during redraw */
   VTermPos cursorpos;
   GdkColor cursor_col;
   int cursor_shape;
+
+#define CURSOR_ENABLED(pt) ((pt)->cursor_visible && !(pt)->cursor_hidden_for_redraw)
 
   guint cursor_timer_id;
 
@@ -542,7 +545,7 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
       }
 
       int cursor_here = pos.row == pt->cursorpos.row && pos.col == pt->cursorpos.col;
-      int cursor_visible = pt->cursor_visible && (pt->cursor_blinkstate || !pt->has_focus);
+      int cursor_visible = CURSOR_ENABLED(pt) && (pt->cursor_blinkstate || !pt->has_focus);
 
       chpen(&cell, pt, cursor_visible && cursor_here && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
 
@@ -642,7 +645,7 @@ static gboolean cursor_blink(void *user_data)
 
   pt->cursor_blinkstate = !pt->cursor_blinkstate;
 
-  if(pt->cursor_visible) {
+  if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
     flush_glyphs(pt);
@@ -723,16 +726,16 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 
   flush_glyphs(pt);
 
-  int cursor_in_area = pt->cursor_visible && pt->cursor_blinkstate &&
+  int cursor_in_area = CURSOR_ENABLED(pt) && pt->cursor_blinkstate &&
      (pt->cursorpos.col >= src.start_col && pt->cursorpos.col < src.end_col) &&
      (pt->cursorpos.row >= src.start_row && pt->cursorpos.row < src.end_row);
 
   if(cursor_in_area) {
     /* Hide cursor before reading source area */
-    pt->cursor_visible = 0;
+    pt->cursor_hidden_for_redraw = 1;
     repaint_cell(pt, pt->cursorpos);
     flush_glyphs(pt);
-    pt->cursor_visible = 1;
+    pt->cursor_hidden_for_redraw = 0;
   }
 
   GdkRectangle destarea = GDKRECTANGLE_FROM_VTERMRECT(pt, dest);
@@ -766,7 +769,7 @@ int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
   pt->cursorpos = pos;
   pt->cursor_blinkstate = 1;
 
-  if(pt->cursor_visible) {
+  if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, oldpos);
     repaint_cell(pt, pos);
   }
@@ -1151,7 +1154,7 @@ void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
 
-  if(pt->cursor_visible) {
+  if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
     flush_glyphs(pt);
@@ -1163,7 +1166,7 @@ void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_dat
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
 
-  if(pt->cursor_visible) {
+  if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
     flush_glyphs(pt);
@@ -1210,20 +1213,15 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
 
   /* Hide cursor during damage flush */
 
-  int was_cursor_visible = pt->cursor_visible;
-  pt->cursor_visible = 0;
+  pt->cursor_hidden_for_redraw = 1;
   repaint_cell(pt, pt->cursorpos);
 
   vterm_push_bytes(pt->vt, buffer, bytes);
 
   vterm_screen_flush_damage(pt->vts);
 
-  flush_glyphs(pt);
-
-  if(was_cursor_visible) {
-    pt->cursor_visible = 1;
-    repaint_cell(pt, pt->cursorpos);
-  }
+  pt->cursor_hidden_for_redraw = 0;
+  repaint_cell(pt, pt->cursorpos);
 
   flush_glyphs(pt);
 
