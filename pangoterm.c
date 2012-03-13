@@ -672,6 +672,19 @@ static void cursor_stop_blinking(PangoTerm *pt)
   repaint_cell(pt, pt->cursorpos);
 }
 
+static void store_clipboard(PangoTerm *pt)
+{
+  VTermPos start = pt->highlight_start,
+           stop  = pt->highlight_stop;
+
+  gchar *text = fetch_flow_text(pt, start, stop);
+
+  gtk_clipboard_clear(pt->primary_clipboard);
+  gtk_clipboard_set_text(pt->primary_clipboard, text, -1);
+
+  free(text);
+}
+
 static void fetch_clipboard_and_cancel(PangoTerm *pt)
 {
   VTermPos old_start = pt->highlight_start,
@@ -948,14 +961,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
     pt->drag_start.row = -1;
     pt->drag_pos.row   = -1;
 
-    GtkTargetEntry info = {
-      .target = "UTF8_STRING",
-      .flags  = 0,
-      .info   = 0,
-    };
-
-    gtk_clipboard_set_with_data(pt->primary_clipboard,
-        &info, 1, widget_get_clipboard, widget_clear_clipboard, pt);
+    store_clipboard(pt);
   }
   else if(event->button == 1 && event->type == GDK_2BUTTON_PRESS && is_inside) {
     /* Highlight a word. start with the position, and extend it both sides
@@ -991,8 +997,8 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
     pt->highlight_stop.col  = stop_col;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
-
     flush_glyphs(pt);
+    store_clipboard(pt);
   }
   else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
     /* Highlight an entire line */
@@ -1002,8 +1008,8 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
     pt->highlight_stop.col  = pt->cols - 1;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
-
     flush_glyphs(pt);
+    store_clipboard(pt);
   }
 
   return FALSE;
