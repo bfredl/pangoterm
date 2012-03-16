@@ -688,20 +688,16 @@ static void store_clipboard(PangoTerm *pt)
   free(text);
 }
 
-static void fetch_clipboard_and_cancel(PangoTerm *pt)
+static void cancel_highlight(PangoTerm *pt)
 {
   VTermPos old_start = pt->highlight_start,
            old_stop  = pt->highlight_stop;
 
+  if(old_start.row == -1 && old_stop.row == -1)
+    return;
+
   pt->highlight_start.row = -1;
   pt->highlight_stop.row  = -1;
-
-  gchar *text = fetch_flow_text(pt, old_start, old_stop);
-
-  gtk_clipboard_clear(pt->primary_clipboard);
-  gtk_clipboard_set_text(pt->primary_clipboard, text, -1);
-
-  free(text);
 
   repaint_flow(pt, old_start, old_stop);
   flush_glyphs(pt);
@@ -951,9 +947,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
     term_push_string(pt, str);
   }
   else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
-    if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
-      fetch_clipboard_and_cancel(pt);
-    }
+    cancel_highlight(pt);
 
     pt->drag_start.row = row;
     pt->drag_start.col = col;
