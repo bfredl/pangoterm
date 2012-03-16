@@ -217,14 +217,6 @@ static void term_push_string(PangoTerm *pt, gchar *str)
   term_flush_output(pt);
 }
 
-static int cmp_positions(VTermPos a, VTermPos b)
-{
-  if(a.row == b.row)
-    return a.col - b.col;
-  else
-    return a.row - b.row;
-}
-
 static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
 {
   size_t strlen = 0;
@@ -722,9 +714,9 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 
   flush_glyphs(pt);
 
-  int cursor_in_area = CURSOR_ENABLED(pt) && pt->cursor_blinkstate &&
-     (pt->cursorpos.col >= src.start_col && pt->cursorpos.col < src.end_col) &&
-     (pt->cursorpos.row >= src.start_row && pt->cursorpos.row < src.end_row);
+  int cursor_in_area = CURSOR_ENABLED(pt) && 
+        pt->cursor_blinkstate &&
+        vterm_rect_contains(src, pt->cursorpos);
 
   if(cursor_in_area) {
     /* Hide cursor before reading source area */
@@ -1046,7 +1038,7 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
     pt->drag_pos.row = row;
     pt->drag_pos.col = col;
 
-    if(cmp_positions(pt->drag_start, pt->drag_pos) > 0) {
+    if(vterm_pos_cmp(pt->drag_start, pt->drag_pos) > 0) {
       pt->highlight_start = pt->drag_pos;
       pt->highlight_stop  = pt->drag_start;
     }
@@ -1056,7 +1048,7 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
       pt->highlight_stop.col--; /* exclude partial cell */
     }
 
-    if(cmp_positions(old_end, pt->drag_pos) > 0)
+    if(vterm_pos_cmp(old_end, pt->drag_pos) > 0)
       repaint_flow(pt, pt->drag_pos, old_end);
     else
       repaint_flow(pt, old_end, pt->drag_pos);
