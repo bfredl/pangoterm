@@ -703,6 +703,16 @@ int term_damage(VTermRect rect, void *user_data)
 {
   PangoTerm *pt = user_data;
 
+  if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
+    if((pt->highlight_start.row < rect.end_row-1 ||
+        (pt->highlight_start.row == rect.end_row-1 && pt->highlight_start.col < rect.end_col-1)) &&
+       (pt->highlight_stop.row > rect.start_row ||
+        (pt->highlight_stop.row == rect.start_row && pt->highlight_stop.col > rect.start_col))) {
+      /* Damage overlaps highlighted region */
+      cancel_highlight(pt);
+    }
+  }
+
   repaint_rect(pt, rect);
 
   return 1;
@@ -724,6 +734,26 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
     repaint_cell(pt, pt->cursorpos);
     flush_glyphs(pt);
     pt->cursor_hidden_for_redraw = 0;
+  }
+
+  if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
+    int start_inside = vterm_rect_contains(src, pt->highlight_start);
+    int stop_inside  = vterm_rect_contains(src, pt->highlight_stop);
+
+    if(start_inside && stop_inside &&
+        (pt->highlight_start.row == pt->highlight_stop.row ||
+         (src.start_col == 0 && src.end_col == pt->cols))) {
+      int delta_row = dest.start_row - src.start_row;
+      int delta_col = dest.start_col - src.start_col;
+
+      pt->highlight_start.row += delta_row;
+      pt->highlight_start.col += delta_col;
+      pt->highlight_stop.row  += delta_row;
+      pt->highlight_stop.col  += delta_col;
+    }
+    else if(start_inside || stop_inside) {
+      cancel_highlight(pt);
+    }
   }
 
   GdkRectangle destarea = GDKRECTANGLE_FROM_VTERMRECT(pt, dest);
