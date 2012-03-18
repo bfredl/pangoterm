@@ -21,7 +21,7 @@
 #if defined(__FreeBSD__)
 # include <libutil.h>
 # include <termios.h>
-#elif defined(__OpenBSD__) || defined(__NetBSD__)
+#elif defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
 # include <termios.h>
 # include <util.h>
 #else
