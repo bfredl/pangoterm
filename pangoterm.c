@@ -653,7 +653,8 @@ static void cursor_start_blinking(PangoTerm *pt)
   /* Should start blinking in visible state */
   pt->cursor_blinkstate = 1;
 
-  repaint_cell(pt, pt->cursorpos);
+  if(CURSOR_ENABLED(pt))
+    repaint_cell(pt, pt->cursorpos);
 }
 
 static void cursor_stop_blinking(PangoTerm *pt)
@@ -664,7 +665,8 @@ static void cursor_stop_blinking(PangoTerm *pt)
   /* Should always be in visible state */
   pt->cursor_blinkstate = 1;
 
-  repaint_cell(pt, pt->cursorpos);
+  if(CURSOR_ENABLED(pt))
+    repaint_cell(pt, pt->cursorpos);
 }
 
 static void store_clipboard(PangoTerm *pt)
@@ -724,18 +726,6 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 
   flush_glyphs(pt);
 
-  int cursor_in_area = CURSOR_ENABLED(pt) && 
-        pt->cursor_blinkstate &&
-        vterm_rect_contains(src, pt->cursorpos);
-
-  if(cursor_in_area) {
-    /* Hide cursor before reading source area */
-    pt->cursor_hidden_for_redraw = 1;
-    repaint_cell(pt, pt->cursorpos);
-    flush_glyphs(pt);
-    pt->cursor_hidden_for_redraw = 0;
-  }
-
   if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
     int start_inside = vterm_rect_contains(src, pt->highlight_start);
     int stop_inside  = vterm_rect_contains(src, pt->highlight_stop);
@@ -771,12 +761,6 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   cairo_destroy(gc);
   blit_buffer(pt, &destarea);
 
-  if(cursor_in_area) {
-    /* Show cursor after writing dest area */
-    repaint_cell(pt, pt->cursorpos);
-    flush_glyphs(pt);
-  }
-
   return 1;
 }
 
@@ -786,11 +770,6 @@ int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
 
   pt->cursorpos = pos;
   pt->cursor_blinkstate = 1;
-
-  if(CURSOR_ENABLED(pt)) {
-    repaint_cell(pt, oldpos);
-    repaint_cell(pt, pos);
-  }
 
   return 1;
 }
@@ -802,7 +781,6 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
   switch(prop) {
   case VTERM_PROP_CURSORVISIBLE:
     pt->cursor_visible = val->boolean;
-    repaint_cell(pt, pt->cursorpos);
     break;
 
   case VTERM_PROP_CURSORBLINK:
@@ -814,7 +792,6 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
 
   case VTERM_PROP_CURSORSHAPE:
     pt->cursor_shape = val->number;
-    repaint_cell(pt, pt->cursorpos);
     break;
 
   case VTERM_PROP_ICONNAME:
