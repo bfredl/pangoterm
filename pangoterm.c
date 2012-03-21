@@ -114,7 +114,7 @@ static char *cursor_col_str = "white";
 static gint cursor_blink_interval = 500;
 
 static char *default_font = "DejaVu Sans Mono";
-static int default_size = 9;
+static double default_size = 9.0;
 
 static char *default_title = "pangoterm";
 
@@ -132,7 +132,7 @@ static GOptionEntry option_entries[] = {
   { "cursor",     0,   0, G_OPTION_ARG_STRING, &cursor_col_str, "Cursor colour", "COL" },
 
   { "font",       0,   0, G_OPTION_ARG_STRING, &default_font, "Font name", "FONT" },
-  { "size",       's', 0, G_OPTION_ARG_INT,    &default_size, "Font size", "INT" },
+  { "size",       's', 0, G_OPTION_ARG_DOUBLE, &default_size, "Font size", "NUM" },
 
   { "title",      0,   0, G_OPTION_ARG_STRING, &default_title, "Title", "STR" },
 
