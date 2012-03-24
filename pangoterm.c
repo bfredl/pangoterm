@@ -1221,6 +1221,37 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
   return TRUE;
 }
 
+GdkPixbuf *load_icon(char *background)
+{
+  /* This technique stolen from 
+   *   http://git.gnome.org/browse/gtk+/tree/gtk/gtkicontheme.c#n3180
+   */
+
+  gchar *str = g_strconcat(
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
+      "<svg version=\"1.1\"\n"
+      "     xmlns=\"http://www.w3.org/2000/svg\"\n"
+      "     xmlns:xi=\"http://www.w3.org/2001/XInclude\"\n"
+      "     width=\"64\"\n"
+      "     height=\"64\">\n"
+      "  <style type=\"text/css\">\n"
+      "    #screen {\n"
+      "      fill: ", background, " !important;\n"
+      "    }\n"
+      "  </style>\n"
+      "  <xi:include href=\"" PANGOTERM_SHAREDIR "/pangoterm.svg" "\"/>\n"
+      "</svg>",
+    NULL);
+
+  GInputStream *stream = g_memory_input_stream_new_from_data(str, -1, g_free);
+
+  GdkPixbuf *ret = gdk_pixbuf_new_from_stream(stream, NULL, NULL);
+
+  g_object_unref(stream);
+
+  return ret;
+}
+
 int main(int argc, char *argv[])
 {
   GError *args_error = NULL;
@@ -1251,10 +1282,9 @@ int main(int argc, char *argv[])
   gtk_window_set_title(GTK_WINDOW(pt->termwin), default_title);
   gtk_widget_set_double_buffered(pt->termwin, FALSE);
 
-  {
-    GdkPixbuf *icon = gdk_pixbuf_new_from_file(PANGOTERM_SHAREDIR "/pangoterm.svg", NULL);
-    gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
-  }
+  GdkPixbuf *icon = load_icon(default_bg);
+  gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
+  gdk_pixbuf_unref(icon);
 
   pt->glyphs = g_string_sized_new(128);
   pt->glyph_widths = g_array_new(FALSE, FALSE, sizeof(int));
