@@ -1251,6 +1251,11 @@ int main(int argc, char *argv[])
   gtk_window_set_title(GTK_WINDOW(pt->termwin), default_title);
   gtk_widget_set_double_buffered(pt->termwin, FALSE);
 
+  {
+    GdkPixbuf *icon = gdk_pixbuf_new_from_file(PANGOTERM_SHAREDIR "/pangoterm.svg", NULL);
+    gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
+  }
+
   pt->glyphs = g_string_sized_new(128);
   pt->glyph_widths = g_array_new(FALSE, FALSE, sizeof(int));
 

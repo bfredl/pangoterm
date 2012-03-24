@@ -31,6 +31,9 @@ LDFLAGS +=$(shell pkg-config --libs   cairo)
 
 PREFIX=/usr/local
 BINDIR=$(PREFIX)/bin
+SHAREDIR=$(PREFIX)/share
+
+CFLAGS+=-DPANGOTERM_SHAREDIR="\"$(SHAREDIR)\""
 
 CFILES=$(wildcard *.c)
 OBJECTS=$(CFILES:.c=.lo)
@@ -51,9 +54,12 @@ clean:
 	$(LIBTOOL) --mode=clean rm -f pangoterm
 
 .PHONY: install
-install: install-bin
+install: install-bin install-share
 
 # rm the old binary first in case it's still in use
 install-bin: pangoterm
 	install -d $(DESTDIR)$(BINDIR)
 	$(LIBTOOL) --mode=install cp --remove-destination pangoterm $(DESTDIR)$(BINDIR)/pangoterm
+
+install-share:
+	$(LIBTOOL) --mode=install cp pangoterm.svg $(DESTDIR)$(SHAREDIR)/pangoterm.svg
