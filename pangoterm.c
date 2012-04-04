@@ -1148,6 +1148,7 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   pt->buffer = new_buffer;
 
   vterm_set_size(pt->vt, rows, cols);
+  vterm_screen_flush_damage(pt->vts);
 
   return;
 }
