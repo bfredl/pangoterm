@@ -896,9 +896,16 @@ gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_da
 
   VTermKey keyval = convert_keyval(event->keyval, &state);
 
+  /*
+   * See also
+   *   /usr/include/gtk-2.0/gdk/gdkkeysyms.h
+   */
+
   if(keyval)
     vterm_input_push_key(pt->vt, state, keyval);
-  else if(event->keyval >= 0x01000000)
+  else if(event->keyval >= 0x10000000) /* Extension key, not printable Unicode */
+    return FALSE;
+  else if(event->keyval >= 0x01000000) /* Unicode shifted */
     vterm_input_push_char(pt->vt, state, event->keyval - 0x01000000);
   else if(event->keyval < 0x0f00)
     /* event->keyval already contains a Unicode codepoint so that's easy */
