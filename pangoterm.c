@@ -1125,6 +1125,9 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   int cols = raw_width  / pt->cell_width;
   int rows = raw_height / pt->cell_height;
 
+  if(cols == pt->cols && rows == pt->rows)
+    return;
+
   pt->cols = cols;
   pt->rows = rows;
 
