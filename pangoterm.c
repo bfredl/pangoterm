@@ -193,6 +193,19 @@ static VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
   }
 }
 
+static VTermModifier convert_modifier(int state)
+{
+  VTermModifier mod = VTERM_MOD_NONE;
+  if(state & GDK_SHIFT_MASK)
+    mod |= VTERM_MOD_SHIFT;
+  if(state & GDK_CONTROL_MASK)
+    mod |= VTERM_MOD_CTRL;
+  if(state & GDK_MOD1_MASK)
+    mod |= VTERM_MOD_ALT;
+
+    return mod;
+}
+
 static void term_flush_output(PangoTerm *pt)
 {
   size_t bufflen = vterm_output_get_buffer_current(pt->vt);
@@ -886,14 +899,7 @@ gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_da
   if(event->is_modifier)
     return FALSE;
 
-  VTermModifier state = VTERM_MOD_NONE;
-  if(event->state & GDK_SHIFT_MASK)
-    state |= VTERM_MOD_SHIFT;
-  if(event->state & GDK_CONTROL_MASK)
-    state |= VTERM_MOD_CTRL;
-  if(event->state & GDK_MOD1_MASK)
-    state |= VTERM_MOD_ALT;
-
+  VTermModifier state = convert_modifier(event->state);
   VTermKey keyval = convert_keyval(event->keyval, &state);
 
   /*
@@ -932,6 +938,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
 
   /* Shift modifier bypasses terminal mouse handling */
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
+    VTermModifier state = convert_modifier(event->state);
     int is_press;
     switch(event->type) {
     case GDK_BUTTON_PRESS:
@@ -943,7 +950,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
     default:
       return TRUE;
     }
-    (*pt->mousefunc)(col, row, event->button, is_press, pt->mousedata);
+    (*pt->mousefunc)(col, row, event->button, is_press, state, pt->mousedata);
     term_flush_output(pt);
   }
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
@@ -1032,7 +1039,8 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
 
   /* Shift modifier bypasses terminal mouse handling */
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
-    (*pt->mousefunc)(col, row, 0, 0, pt->mousedata);
+    VTermModifier state = convert_modifier(event->state);
+    (*pt->mousefunc)(col, row, 0, 0, state, pt->mousedata);
     term_flush_output(pt);
   }
   else if(event->state & GDK_BUTTON1_MASK) {
@@ -1089,8 +1097,10 @@ gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_d
       return FALSE;
   }
 
+  VTermModifier state = convert_modifier(event->state);
+
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
-    (*pt->mousefunc)(col, row, button, 1, pt->mousedata);
+    (*pt->mousefunc)(col, row, button, 1, state, pt->mousedata);
     term_flush_output(pt);
   }
 
