@@ -1238,6 +1238,7 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
   repaint_cell(pt, pt->cursorpos);
 
   flush_glyphs(pt);
+  term_flush_output(pt);
 
   return TRUE;
 }
