@@ -1060,7 +1060,10 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
     pt->drag_pos.row = row;
     pt->drag_pos.col = col;
 
-    if(vterm_screen_is_eol(pt->vts, pt->drag_pos))
+    VTermPos pos_left1 = pt->drag_pos;
+    if(pos_left1.col > 0) pos_left1.col--;
+
+    if(vterm_screen_is_eol(pt->vts, pos_left1))
       pt->drag_pos.col = pt->cols;
 
     if(vterm_pos_cmp(pt->drag_start, pt->drag_pos) > 0) {
