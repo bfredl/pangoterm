@@ -1372,9 +1372,9 @@ int main(int argc, char *argv[])
   cairo_t *cctx = gdk_cairo_create(pt->termdraw);
   PangoContext *pctx = pango_cairo_create_context(cctx);
 
-  PangoFontDescription *fontdesc = pango_font_description_new();
-  pango_font_description_set_family(fontdesc, default_font);
-  pango_font_description_set_size(fontdesc, default_size * PANGO_SCALE);
+  PangoFontDescription *fontdesc = pango_font_description_from_string(default_font);
+  if(pango_font_description_get_size(fontdesc) == 0)
+    pango_font_description_set_size(fontdesc, default_size * PANGO_SCALE);
 
   pango_context_set_font_description(pctx, fontdesc);
 
