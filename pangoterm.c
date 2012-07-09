@@ -1483,7 +1483,7 @@ int main(int argc, char *argv[])
 
   gtk_widget_show_all(pt->termwin);
 
-  vterm_screen_reset(pt->vts);
+  vterm_screen_reset(pt->vts, 1);
 
   gtk_main();
 
