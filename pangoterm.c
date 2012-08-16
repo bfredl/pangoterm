@@ -5,6 +5,7 @@
 #define _BSD_SOURCE
 
 #include <errno.h>
+#include <fcntl.h>
 #include <locale.h>
 #include <poll.h>
 #include <stddef.h>
@@ -1477,6 +1478,8 @@ int main(int argc, char *argv[])
     }
     _exit(1);
   }
+
+  fcntl(pt->master, F_SETFL, fcntl(pt->master, F_GETFL) | O_NONBLOCK);
 
   GIOChannel *gio_master = g_io_channel_unix_new(pt->master);
   g_io_add_watch(gio_master, G_IO_IN|G_IO_HUP, master_readable, pt);
