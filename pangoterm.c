@@ -1211,6 +1211,9 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
 
   ssize_t bytes = read(pt->master, buffer, sizeof buffer);
 
+  if(bytes == -1 && errno == EAGAIN)
+    return TRUE;
+
   if(bytes == 0 || (bytes == -1 && errno == EIO)) {
     gtk_main_quit();
     return FALSE;
