@@ -1207,40 +1207,51 @@ gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_da
 {
   PangoTerm *pt = user_data;
 
-  char buffer[8192];
-
-  ssize_t bytes = read(pt->master, buffer, sizeof buffer);
-
-  if(bytes == -1 && errno == EAGAIN)
-    return TRUE;
-
-  if(bytes == 0 || (bytes == -1 && errno == EIO)) {
-    gtk_main_quit();
-    return FALSE;
-  }
-  if(bytes < 0) {
-    fprintf(stderr, "read(master) failed - %s\n", strerror(errno));
-    exit(1);
-  }
-
-#ifdef DEBUG_PRINT_INPUT
-  printf("Read %zd bytes from master:\n", bytes);
-  int i;
-  for(i = 0; i < bytes; i++) {
-    printf(i % 16 == 0 ? " |  %02x" : " %02x", buffer[i]);
-    if(i % 16 == 15)
-      printf("\n");
-  }
-  if(i % 16)
-    printf("\n");
-#endif
-
   /* Hide cursor during damage flush */
 
   pt->cursor_hidden_for_redraw = 1;
   repaint_cell(pt, pt->cursorpos);
 
-  vterm_push_bytes(pt->vt, buffer, bytes);
+  /* Make sure we don't take longer than 20msec doing this */
+  guint64 deadline_time = g_get_real_time() + 20*1000;
+
+  while(1) {
+    /* Linux kernel's PTY buffer is a fixed 4096 bytes (1 page) so there's
+     * never any point read()ing more than that
+     */
+    char buffer[4096];
+
+    ssize_t bytes = read(pt->master, buffer, sizeof buffer);
+
+    if(bytes == -1 && errno == EAGAIN)
+      break;
+
+    if(bytes == 0 || (bytes == -1 && errno == EIO)) {
+      gtk_main_quit();
+      return FALSE;
+    }
+    if(bytes < 0) {
+      fprintf(stderr, "read(master) failed - %s\n", strerror(errno));
+      exit(1);
+    }
+
+#ifdef DEBUG_PRINT_INPUT
+    printf("Read %zd bytes from master:\n", bytes);
+    int i;
+    for(i = 0; i < bytes; i++) {
+      printf(i % 16 == 0 ? " |  %02x" : " %02x", buffer[i]);
+      if(i % 16 == 15)
+        printf("\n");
+    }
+    if(i % 16)
+      printf("\n");
+#endif
+
+    vterm_push_bytes(pt->vt, buffer, bytes);
+
+    if(g_get_real_time() >= deadline_time)
+      break;
+  }
 
   vterm_screen_flush_damage(pt->vts);
 
