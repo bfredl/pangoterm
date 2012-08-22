@@ -47,9 +47,8 @@ struct PangoTerm {
   PangoTermResizedFn *resizedfn;
   void *resizedfn_data;
 
-  char *font;
-  int n_alt_fonts;
-  char **alt_fonts;
+  int n_fonts;
+  char **fonts;
   double font_size;
 
   int cell_width_pango;
@@ -417,11 +416,10 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
 
   if(cell->attrs.font != pt->pen.attrs.font) {
     int font = pt->pen.attrs.font = cell->attrs.font;
+    if(font >= pt->n_fonts)
+      font = 0;
     flush_glyphs(pt);
-    if(font == 0 || font > pt->n_alt_fonts)
-      ADDATTR(pango_attr_family_new(pt->font));
-    else
-      ADDATTR(pango_attr_family_new(pt->alt_fonts[font - 1]));
+    ADDATTR(pango_attr_family_new(pt->fonts[font]));
   }
 
   // Upscale 8->16bit
@@ -1186,6 +1184,11 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->rows = rows;
   pt->cols = cols;
 
+  pt->n_fonts = 1;
+  pt->fonts = malloc(sizeof(char *));
+  pt->fonts[0] = g_strdup("Monospace");
+  pt->font_size = 9.0;
+
   pt->cursor_blink_interval = 500;
 
   /* Create VTerm */
@@ -1251,6 +1254,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
 void pangoterm_free(PangoTerm *pt)
 {
+  g_strfreev(pt->fonts);
+
   vterm_free(pt->vt);
 }
 
@@ -1284,13 +1289,19 @@ void pangoterm_set_cursor_color(PangoTerm *pt, GdkColor *cursor_col)
 
 void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
 {
-  /* TODO: copy the strings; for now we'll just keep ptrs */
-  pt->font = font;
-  pt->alt_fonts = alt_fonts;
+  int n_fonts = 1;
+  while(alt_fonts[n_fonts-1])
+    n_fonts++;
 
-  pt->n_alt_fonts = 0;
-  while(alt_fonts[pt->n_alt_fonts])
-    pt->n_alt_fonts++;
+  g_strfreev(pt->fonts);
+
+  pt->n_fonts = n_fonts;
+
+  pt->fonts = malloc(sizeof(char*) * n_fonts);
+  pt->fonts[0] = g_strdup(font);
+
+  for(int i = 1; i < n_fonts; i++)
+    pt->fonts[i] = g_strdup(alt_fonts[i-1]);
 }
 
 void pangoterm_set_font_size(PangoTerm *pt, double size)
@@ -1322,7 +1333,7 @@ void pangoterm_start(PangoTerm *pt)
   cairo_t *cctx = gdk_cairo_create(pt->termdraw);
   PangoContext *pctx = pango_cairo_create_context(cctx);
 
-  PangoFontDescription *fontdesc = pango_font_description_from_string(pt->font);
+  PangoFontDescription *fontdesc = pango_font_description_from_string(pt->fonts[0]);
   if(pango_font_description_get_size(fontdesc) == 0)
     pango_font_description_set_size(fontdesc, pt->font_size * PANGO_SCALE);
 
