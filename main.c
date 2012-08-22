@@ -25,6 +25,8 @@
 
 #include "pangoterm.h"
 
+#include "conf.h"
+
 static char *default_fg = "gray90";
 static char *default_bg = "black";
 
@@ -42,19 +44,18 @@ static char *alt_fonts[] = {
   "Courier 10 Pitch",
 };
 
-static GOptionEntry option_entries[] = {
-  /* long_name, short_name, flags, arg, arg_data, description, arg_description */
-  { "foreground", 0,   0, G_OPTION_ARG_STRING, &default_fg, "Default foreground colour", "COL" },
-  { "background", 0,   0, G_OPTION_ARG_STRING, &default_bg, "Default background colour", "COL" },
-  { "cursor",     0,   0, G_OPTION_ARG_STRING, &cursor_col_str, "Cursor colour", "COL" },
+static ConfigEntry entries[] = {
+  CONF_STRING("foreground", 0, default_fg, "Default foreground colour", "COL"),
+  CONF_STRING("background", 0, default_bg, "Default background colour", "COL"),
+  CONF_STRING("cursor",     0, cursor_col_str, "Cursor colour", "COL"),
 
-  { "font",       0,   0, G_OPTION_ARG_STRING, &default_font, "Font name", "FONT" },
-  { "size",       's', 0, G_OPTION_ARG_DOUBLE, &default_size, "Font size", "NUM" },
+  CONF_STRING("font", 0,   default_font, "Font name", "STR"),
+  CONF_DOUBLE("size", 's', default_size, "Font size", "NUM"),
 
-  { "title",      0,   0, G_OPTION_ARG_STRING, &default_title, "Title", "STR" },
+  CONF_STRING("title", 0, default_title, "Title", "STR"),
 
-  { "lines",      0,   0, G_OPTION_ARG_INT,    &default_lines, "Number of lines", "LINES" },
-  { "cols",       0,   0, G_OPTION_ARG_INT,    &default_cols,  "Number of columns", "COLS" },
+  CONF_INT("lines", 0, default_lines, "Number of lines", "NUM"),
+  CONF_INT("cols",  0, default_cols,  "Number of cols",  "NUM"),
 
   { NULL },
 };
@@ -126,16 +127,8 @@ static gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer 
 
 int main(int argc, char *argv[])
 {
-  GError *args_error = NULL;
-  GOptionContext *args_context;
-
-  args_context = g_option_context_new("commandline...");
-  g_option_context_add_main_entries(args_context, option_entries, NULL);
-  g_option_context_add_group(args_context, gtk_get_option_group(TRUE));
-  if(!g_option_context_parse(args_context, &argc, &argv, &args_error)) {
-    fprintf(stderr, "Option parsing failed: %s\n", args_error->message);
-    exit (1);
-  }
+  if(!conf_parse(entries, &argc, &argv))
+    exit(1);
 
   gtk_init(&argc, &argv);
   setlocale(LC_CTYPE, NULL);
