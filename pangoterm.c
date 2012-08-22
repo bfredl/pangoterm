@@ -658,7 +658,7 @@ static void cancel_highlight(PangoTerm *pt)
  * VTerm event handlers
  */
 
-int term_damage(VTermRect rect, void *user_data)
+static int term_damage(VTermRect rect, void *user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -677,7 +677,7 @@ int term_damage(VTermRect rect, void *user_data)
   return 1;
 }
 
-int term_moverect(VTermRect dest, VTermRect src, void *user_data)
+static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -721,7 +721,7 @@ int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   return 1;
 }
 
-int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
+static int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -731,7 +731,7 @@ int term_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user_data)
   return 1;
 }
 
-int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
+static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -770,7 +770,7 @@ int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
   return 1;
 }
 
-int term_setmousefunc(VTermMouseFunc func, void *data, void *user_data)
+static int term_setmousefunc(VTermMouseFunc func, void *data, void *user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -780,7 +780,7 @@ int term_setmousefunc(VTermMouseFunc func, void *data, void *user_data)
   return 1;
 }
 
-int term_bell(void *user_data)
+static int term_bell(void *user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -801,34 +801,7 @@ static VTermScreenCallbacks cb = {
  * GTK widget event handlers
  */
 
-void widget_get_clipboard(GtkClipboard *clipboard, GtkSelectionData *data, guint info, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-
-  gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
-
-  gtk_selection_data_set_text(data, text, -1);
-
-  free(text);
-}
-
-void widget_clear_clipboard(GtkClipboard *clipboard, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-
-  VTermPos old_start = pt->highlight_start,
-           old_stop  = pt->highlight_stop;
-
-  pt->highlight_start.row = -1;
-  pt->highlight_stop.row  = -1;
-
-  if(old_start.row != -1 && old_stop.row != -1) {
-    repaint_flow(pt, old_start, old_stop);
-    flush_glyphs(pt);
-  }
-}
-
-gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
+static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   /* GtkIMContext will eat a Shift-Space and not tell us about shift.
@@ -868,7 +841,7 @@ gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_da
   return FALSE;
 }
 
-gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
+static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -969,7 +942,7 @@ gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer us
   return FALSE;
 }
 
-gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
+static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -1031,7 +1004,7 @@ gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer use
   return FALSE;
 }
 
-gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
+static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -1057,7 +1030,7 @@ gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_d
   return FALSE;
 }
 
-gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
+static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -1066,7 +1039,7 @@ gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
   return FALSE;
 }
 
-gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_data)
+static gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -1075,7 +1048,7 @@ gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_d
   return TRUE;
 }
 
-void widget_resize(GtkContainer* widget, gpointer user_data)
+static void widget_resize(GtkContainer* widget, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -1113,7 +1086,7 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   return;
 }
 
-void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
+static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
@@ -1125,7 +1098,7 @@ void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data
   }
 }
 
-void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
+static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
@@ -1137,7 +1110,7 @@ void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_dat
   }
 }
 
-void widget_quit(GtkContainer* widget, gpointer unused_data)
+static void widget_quit(GtkContainer* widget, gpointer unused_data)
 {
   gtk_main_quit();
 }
@@ -1183,6 +1156,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   pt->rows = rows;
   pt->cols = cols;
+
+  pt->writefn = NULL;
+  pt->resizedfn = NULL;
 
   pt->n_fonts = 1;
   pt->fonts = malloc(sizeof(char *));
