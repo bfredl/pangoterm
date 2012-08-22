@@ -1,35 +1,6 @@
-/* for putenv() */
-#define _XOPEN_SOURCE
+#include "pangoterm.h"
 
-/* for ECHOCTL and ECHOKE */
-#define _BSD_SOURCE
-
-#include <errno.h>
-#include <fcntl.h>
-#include <locale.h>
-#include <poll.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <wctype.h>
-
-/* suck up the non-standard openpty/forkpty */
-#if defined(__FreeBSD__)
-# include <libutil.h>
-# include <termios.h>
-#elif defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
-# include <termios.h>
-# include <util.h>
-#else
-# include <pty.h>
-#endif
-
-#include "vterm.h"
 
 #include <cairo/cairo.h>
 #include <gtk/gtk.h>
@@ -39,8 +10,7 @@
 # define DEBUG_PRINT_INPUT
 #endif
 
-
-typedef struct {
+struct PangoTerm {
   VTerm *vt;
   VTermScreen *vts;
 
@@ -68,16 +38,26 @@ typedef struct {
     PangoLayout *layout;
   } pen;
 
-  int master;
-
   int rows;
   int cols;
+
+  PangoTermWriteFn *writefn;
+  void *writefn_data;
+
+  PangoTermResizedFn *resizedfn;
+  void *resizedfn_data;
+
+  char *font;
+  int n_alt_fonts;
+  char **alt_fonts;
+  double font_size;
 
   int cell_width_pango;
   int cell_width;
   int cell_height;
 
   int has_focus;
+  int cursor_blink_interval;
   int cursor_visible;    /* VTERM_PROP_CURSORVISIBLE */
   int cursor_blinkstate; /* during high state of blink */
   int cursor_hidden_for_redraw; /* true to temporarily hide during redraw */
@@ -106,41 +86,6 @@ typedef struct {
   VTermPos highlight_stop;
 
   GtkClipboard *primary_clipboard;
-} PangoTerm;
-
-static char *default_fg = "gray90";
-static char *default_bg = "black";
-
-static char *cursor_col_str = "white";
-static gint cursor_blink_interval = 500;
-
-static char *default_font = "DejaVu Sans Mono";
-static double default_size = 9.0;
-
-static char *default_title = "pangoterm";
-
-static int default_lines = 25;
-static int default_cols  = 80;
-
-static char *alt_fonts[] = {
-  "Courier 10 Pitch",
-};
-
-static GOptionEntry option_entries[] = {
-  /* long_name, short_name, flags, arg, arg_data, description, arg_description */
-  { "foreground", 0,   0, G_OPTION_ARG_STRING, &default_fg, "Default foreground colour", "COL" },
-  { "background", 0,   0, G_OPTION_ARG_STRING, &default_bg, "Default background colour", "COL" },
-  { "cursor",     0,   0, G_OPTION_ARG_STRING, &cursor_col_str, "Cursor colour", "COL" },
-
-  { "font",       0,   0, G_OPTION_ARG_STRING, &default_font, "Font name", "FONT" },
-  { "size",       's', 0, G_OPTION_ARG_DOUBLE, &default_size, "Font size", "NUM" },
-
-  { "title",      0,   0, G_OPTION_ARG_STRING, &default_title, "Title", "STR" },
-
-  { "lines",      0,   0, G_OPTION_ARG_INT,    &default_lines, "Number of lines", "LINES" },
-  { "cols",       0,   0, G_OPTION_ARG_INT,    &default_cols,  "Number of columns", "COLS" },
-
-  { NULL },
 };
 
 /*
@@ -213,7 +158,7 @@ static void term_flush_output(PangoTerm *pt)
   if(bufflen) {
     char buffer[bufflen];
     bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
-    write(pt->master, buffer, bufflen);
+    (*pt->writefn)(buffer, bufflen, pt->writefn_data);
   }
 }
 
@@ -473,10 +418,10 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
   if(cell->attrs.font != pt->pen.attrs.font) {
     int font = pt->pen.attrs.font = cell->attrs.font;
     flush_glyphs(pt);
-    if(font == 0 || font > sizeof(alt_fonts)/sizeof(alt_fonts[0]))
-      ADDATTR(pango_attr_family_new(default_font));
+    if(font == 0 || font > pt->n_alt_fonts)
+      ADDATTR(pango_attr_family_new(pt->font));
     else
-      ADDATTR(pango_attr_family_new(alt_fonts[font - 1]));
+      ADDATTR(pango_attr_family_new(pt->alt_fonts[font - 1]));
   }
 
   // Upscale 8->16bit
@@ -662,7 +607,7 @@ static gboolean cursor_blink(void *user_data)
 
 static void cursor_start_blinking(PangoTerm *pt)
 {
-  pt->cursor_timer_id = g_timeout_add(cursor_blink_interval, cursor_blink, pt);
+  pt->cursor_timer_id = g_timeout_add(pt->cursor_blink_interval, cursor_blink, pt);
 
   /* Should start blinking in visible state */
   pt->cursor_blinkstate = 1;
@@ -1148,8 +1093,8 @@ void widget_resize(GtkContainer* widget, gpointer user_data)
   pt->cols = cols;
   pt->rows = rows;
 
-  struct winsize size = { rows, cols, 0, 0 };
-  ioctl(pt->master, TIOCSWINSZ, &size);
+  if(pt->resizedfn)
+    (*pt->resizedfn)(rows, cols, pt->resizedfn_data);
 
   cairo_surface_t* new_buffer = gdk_window_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
@@ -1199,76 +1144,13 @@ void widget_quit(GtkContainer* widget, gpointer unused_data)
   gtk_main_quit();
 }
 
-/*
- * Misc.
- */
-
-gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-
-  /* Hide cursor during damage flush */
-
-  pt->cursor_hidden_for_redraw = 1;
-  repaint_cell(pt, pt->cursorpos);
-
-  /* Make sure we don't take longer than 20msec doing this */
-  guint64 deadline_time = g_get_real_time() + 20*1000;
-
-  while(1) {
-    /* Linux kernel's PTY buffer is a fixed 4096 bytes (1 page) so there's
-     * never any point read()ing more than that
-     */
-    char buffer[4096];
-
-    ssize_t bytes = read(pt->master, buffer, sizeof buffer);
-
-    if(bytes == -1 && errno == EAGAIN)
-      break;
-
-    if(bytes == 0 || (bytes == -1 && errno == EIO)) {
-      gtk_main_quit();
-      return FALSE;
-    }
-    if(bytes < 0) {
-      fprintf(stderr, "read(master) failed - %s\n", strerror(errno));
-      exit(1);
-    }
-
-#ifdef DEBUG_PRINT_INPUT
-    printf("Read %zd bytes from master:\n", bytes);
-    int i;
-    for(i = 0; i < bytes; i++) {
-      printf(i % 16 == 0 ? " |  %02x" : " %02x", buffer[i]);
-      if(i % 16 == 15)
-        printf("\n");
-    }
-    if(i % 16)
-      printf("\n");
-#endif
-
-    vterm_push_bytes(pt->vt, buffer, bytes);
-
-    if(g_get_real_time() >= deadline_time)
-      break;
-  }
-
-  vterm_screen_flush_damage(pt->vts);
-
-  pt->cursor_hidden_for_redraw = 0;
-  repaint_cell(pt, pt->cursorpos);
-
-  flush_glyphs(pt);
-  term_flush_output(pt);
-
-  return TRUE;
-}
-
-GdkPixbuf *load_icon(char *background)
+static GdkPixbuf *load_icon(GdkColor *background)
 {
   /* This technique stolen from 
    *   http://git.gnome.org/browse/gtk+/tree/gtk/gtkicontheme.c#n3180
    */
+
+  gchar *background_str = gdk_color_to_string(background);
 
   gchar *str = g_strconcat(
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
@@ -1279,12 +1161,14 @@ GdkPixbuf *load_icon(char *background)
       "     height=\"64\">\n"
       "  <style type=\"text/css\">\n"
       "    #screen {\n"
-      "      fill: ", background, " !important;\n"
+      "      fill: ", background_str, " !important;\n"
       "    }\n"
       "  </style>\n"
       "  <xi:include href=\"" PANGOTERM_SHAREDIR "/pangoterm.svg" "\"/>\n"
       "</svg>",
     NULL);
+
+  free(background_str);
 
   GInputStream *stream = g_memory_input_stream_new_from_data(str, -1, g_free);
 
@@ -1295,39 +1179,34 @@ GdkPixbuf *load_icon(char *background)
   return ret;
 }
 
-int main(int argc, char *argv[])
+PangoTerm *pangoterm_new(int rows, int cols)
 {
-  GError *args_error = NULL;
-  GOptionContext *args_context;
-
-  args_context = g_option_context_new("commandline...");
-  g_option_context_add_main_entries(args_context, option_entries, NULL);
-  g_option_context_add_group(args_context, gtk_get_option_group(TRUE));
-  if(!g_option_context_parse(args_context, &argc, &argv, &args_error)) {
-    fprintf(stderr, "Option parsing failed: %s\n", args_error->message);
-    exit (1);
-  }
-
-  gtk_init(&argc, &argv);
-  setlocale(LC_CTYPE, NULL);
-
   PangoTerm *pt = g_new0(PangoTerm, 1);
 
-  pt->cols = default_cols;
-  pt->rows = default_lines;
+  pt->rows = rows;
+  pt->cols = cols;
 
-  struct winsize size = { pt->rows, pt->cols, 0, 0 };
+  pt->cursor_blink_interval = 500;
 
-  pt->vt = vterm_new(size.ws_row, size.ws_col);
+  /* Create VTerm */
+  pt->vt = vterm_new(rows, cols);
+
+  /* Set up parser */
   vterm_parser_set_utf8(pt->vt, 1);
 
-  pt->termwin = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-  gtk_window_set_title(GTK_WINDOW(pt->termwin), default_title);
-  gtk_widget_set_double_buffered(pt->termwin, FALSE);
+  /* Set up state */
+  vterm_state_set_bold_highbright(vterm_obtain_state(pt->vt), 1);
 
-  GdkPixbuf *icon = load_icon(default_bg);
-  gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
-  gdk_pixbuf_unref(icon);
+  /* Set up screen */
+  pt->vts = vterm_obtain_screen(pt->vt);
+  vterm_screen_enable_altscreen(pt->vts, 1);
+  vterm_screen_set_callbacks(pt->vts, &cb, pt);
+  vterm_screen_set_damage_merge(pt->vts, VTERM_DAMAGE_SCROLL);
+
+  /* Set up GTK widget */
+
+  pt->termwin = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  gtk_widget_set_double_buffered(pt->termwin, FALSE);
 
   pt->glyphs = g_string_sized_new(128);
   pt->glyph_widths = g_array_new(FALSE, FALSE, sizeof(int));
@@ -1338,33 +1217,7 @@ int main(int argc, char *argv[])
 
   gdk_window_set_cursor(GDK_WINDOW(pt->termdraw), gdk_cursor_new(GDK_XTERM));
 
-  GdkColor gdk_col;
-  gdk_color_parse(default_fg, &gdk_col);
-
-  VTermColor col_fg;
-  col_fg.red   = gdk_col.red   / 257;
-  col_fg.green = gdk_col.green / 257;
-  col_fg.blue  = gdk_col.blue  / 257;
-
-  gdk_color_parse(default_bg, &gdk_col);
-
-  VTermColor col_bg;
-  col_bg.red   = gdk_col.red   / 257;
-  col_bg.green = gdk_col.green / 257;
-  col_bg.blue  = gdk_col.blue  / 257;
-
-  GdkColormap* colormap = gdk_colormap_get_system();
-  gdk_rgb_find_color(colormap, &gdk_col);
-  gdk_window_set_background(pt->termdraw, &gdk_col);
-  vterm_state_set_default_colors(vterm_obtain_state(pt->vt), &col_fg, &col_bg);
-  vterm_state_set_bold_highbright(vterm_obtain_state(pt->vt), 1);
-
-  pt->vts = vterm_obtain_screen(pt->vt);
-  vterm_screen_enable_altscreen(pt->vts, 1);
-  vterm_screen_set_callbacks(pt->vts, &cb, pt);
-  vterm_screen_set_damage_merge(pt->vts, VTERM_DAMAGE_SCROLL);
-
-  pt->cursor_timer_id = g_timeout_add(cursor_blink_interval, cursor_blink, pt);
+  pt->cursor_timer_id = g_timeout_add(pt->cursor_blink_interval, cursor_blink, pt);
   pt->cursor_blinkstate = 1;
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
@@ -1384,12 +1237,94 @@ int main(int argc, char *argv[])
   pt->im_context = gtk_im_context_simple_new();
 
   g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
+
+  pt->drag_start.row      = -1;
+  pt->drag_pos.row        = -1;
+  pt->highlight_start.row = -1;
+  pt->highlight_stop.row  = -1;
+
+  pt->primary_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+
+  return pt;
+}
+
+void pangoterm_free(PangoTerm *pt)
+{
+  vterm_free(pt->vt);
+}
+
+void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col)
+{
+  VTermColor fg;
+  fg.red   = fg_col->red   / 257;
+  fg.green = fg_col->green / 257;
+  fg.blue  = fg_col->blue  / 257;
+
+  VTermColor bg;
+  bg.red   = bg_col->red   / 257;
+  bg.green = bg_col->green / 257;
+  bg.blue  = bg_col->blue  / 257;
+
+  vterm_state_set_default_colors(vterm_obtain_state(pt->vt), &fg, &bg);
+
+  GdkColormap* colormap = gdk_colormap_get_system();
+  gdk_rgb_find_color(colormap, bg_col);
+  gdk_window_set_background(pt->termdraw, bg_col);
+
+  GdkPixbuf *icon = load_icon(bg_col);
+  gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
+  g_object_unref(icon);
+}
+
+void pangoterm_set_cursor_color(PangoTerm *pt, GdkColor *cursor_col)
+{
+  pt->cursor_col = *cursor_col;
+}
+
+void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
+{
+  /* TODO: copy the strings; for now we'll just keep ptrs */
+  pt->font = font;
+  pt->alt_fonts = alt_fonts;
+
+  pt->n_alt_fonts = 0;
+  while(alt_fonts[pt->n_alt_fonts])
+    pt->n_alt_fonts++;
+}
+
+void pangoterm_set_font_size(PangoTerm *pt, double size)
+{
+  pt->font_size = size;
+}
+
+void pangoterm_set_title(PangoTerm *pt, const char *title)
+{
+  gtk_window_set_title(GTK_WINDOW(pt->termwin), title);
+}
+
+void pangoterm_set_write_fn(PangoTerm *pt, PangoTermWriteFn *fn, void *user)
+{
+  pt->writefn = fn;
+  pt->writefn_data = user;
+}
+
+void pangoterm_set_resized_fn(PangoTerm *pt, PangoTermResizedFn *fn, void *user)
+{
+  pt->resizedfn = fn;
+  pt->resizedfn_data = user;
+}
+
+void pangoterm_start(PangoTerm *pt)
+{
+  /* Finish the rest of the setup and start */
+
   cairo_t *cctx = gdk_cairo_create(pt->termdraw);
   PangoContext *pctx = pango_cairo_create_context(cctx);
 
-  PangoFontDescription *fontdesc = pango_font_description_from_string(default_font);
+  PangoFontDescription *fontdesc = pango_font_description_from_string(pt->font);
   if(pango_font_description_get_size(fontdesc) == 0)
-    pango_font_description_set_size(fontdesc, default_size * PANGO_SCALE);
+    pango_font_description_set_size(fontdesc, pt->font_size * PANGO_SCALE);
 
   pango_context_set_font_description(pctx, fontdesc);
 
@@ -1410,13 +1345,12 @@ int main(int argc, char *argv[])
   pt->cell_height = PANGO_PIXELS_CEIL(height);
 
   gtk_window_resize(GTK_WINDOW(pt->termwin),
-      size.ws_col * pt->cell_width, size.ws_row * pt->cell_height);
+      pt->cols * pt->cell_width, pt->rows * pt->cell_height);
 
   pt->buffer = gdk_window_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
-      size.ws_col * pt->cell_width,
-      size.ws_row * pt->cell_height);
-  gdk_color_parse(cursor_col_str, &pt->cursor_col);
+      pt->cols * pt->cell_width,
+      pt->rows * pt->cell_height);
 
   GdkGeometry hints;
 
@@ -1427,84 +1361,32 @@ int main(int argc, char *argv[])
 
   gtk_window_set_resizable(GTK_WINDOW(pt->termwin), TRUE);
   gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
-  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
-
-  pt->drag_start.row      = -1;
-  pt->drag_pos.row        = -1;
-  pt->highlight_start.row = -1;
-  pt->highlight_stop.row  = -1;
-
-  pt->primary_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
-
-  /* None of the docs about termios explain how to construct a new one of
-   * these, so this is largely a guess */
-  struct termios termios = {
-    .c_iflag = ICRNL|IXON|IUTF8,
-    .c_oflag = OPOST|ONLCR|NL0|CR0|TAB0|BS0|VT0|FF0,
-    .c_cflag = CS8|CREAD,
-    .c_lflag = ISIG|ICANON|IEXTEN|ECHO|ECHOE|ECHOK,
-    /* c_cc later */
-  };
-
-#ifdef ECHOCTL
-  termios.c_lflag |= ECHOCTL;
-#endif
-#ifdef ECHOKE
-  termios.c_lflag |= ECHOKE;
-#endif
-
-  cfsetspeed(&termios, 38400);
-
-  termios.c_cc[VINTR]    = 0x1f & 'C';
-  termios.c_cc[VQUIT]    = 0x1f & '\\';
-  termios.c_cc[VERASE]   = 0x7f;
-  termios.c_cc[VKILL]    = 0x1f & 'U';
-  termios.c_cc[VEOF]     = 0x1f & 'D';
-  termios.c_cc[VEOL]     = _POSIX_VDISABLE;
-  termios.c_cc[VEOL2]    = _POSIX_VDISABLE;
-  termios.c_cc[VSTART]   = 0x1f & 'Q';
-  termios.c_cc[VSTOP]    = 0x1f & 'S';
-  termios.c_cc[VSUSP]    = 0x1f & 'Z';
-  termios.c_cc[VREPRINT] = 0x1f & 'R';
-  termios.c_cc[VWERASE]  = 0x1f & 'W';
-  termios.c_cc[VLNEXT]   = 0x1f & 'V';
-  termios.c_cc[VMIN]     = 1;
-  termios.c_cc[VTIME]    = 0;
-
-  pid_t kid = forkpty(&pt->master, NULL, &termios, &size);
-  if(kid == 0) {
-    /* Restore the ISIG signals back to defaults */
-    signal(SIGINT,  SIG_DFL);
-    signal(SIGQUIT, SIG_DFL);
-    signal(SIGSTOP, SIG_DFL);
-    signal(SIGCONT, SIG_DFL);
-
-    putenv("TERM=xterm");
-    if(argc > 1) {
-      execvp(argv[1], argv + 1);
-      fprintf(stderr, "Cannot exec(%s) - %s\n", argv[1], strerror(errno));
-    }
-    else {
-      char *shell = getenv("SHELL");
-      char *args[2] = { shell, NULL };
-      execvp(shell, args);
-      fprintf(stderr, "Cannot exec(%s) - %s\n", shell, strerror(errno));
-    }
-    _exit(1);
-  }
-
-  fcntl(pt->master, F_SETFL, fcntl(pt->master, F_GETFL) | O_NONBLOCK);
-
-  GIOChannel *gio_master = g_io_channel_unix_new(pt->master);
-  g_io_add_watch(gio_master, G_IO_IN|G_IO_HUP, master_readable, pt);
-
-  gtk_widget_show_all(pt->termwin);
 
   vterm_screen_reset(pt->vts, 1);
 
-  gtk_main();
+  gtk_widget_show_all(pt->termwin);
+}
 
-  vterm_free(pt->vt);
+void pangoterm_push_bytes(PangoTerm *pt, const char *bytes, size_t len)
+{
+  vterm_push_bytes(pt->vt, bytes, len);
+}
 
-  return 0;
+void pangoterm_begin_update(PangoTerm *pt)
+{
+  /* Hide cursor during damage flush */
+
+  pt->cursor_hidden_for_redraw = 1;
+  repaint_cell(pt, pt->cursorpos);
+}
+
+void pangoterm_end_update(PangoTerm *pt)
+{
+  vterm_screen_flush_damage(pt->vts);
+
+  pt->cursor_hidden_for_redraw = 0;
+  repaint_cell(pt, pt->cursorpos);
+
+  flush_glyphs(pt);
+  term_flush_output(pt);
 }

@@ -35,6 +35,7 @@ SHAREDIR=$(PREFIX)/share
 
 CFLAGS+=-DPANGOTERM_SHAREDIR="\"$(SHAREDIR)\""
 
+HFILES=$(wildcard *.h)
 CFILES=$(wildcard *.c)
 OBJECTS=$(CFILES:.c=.lo)
 
@@ -44,7 +45,7 @@ pangoterm: $(OBJECTS)
 	@echo LINK $@
 	@$(LIBTOOL) --mode=link --tag=CC $(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-%.lo: %.c
+%.lo: %.c $(HFILES)
 	@echo CC $<
 	@$(LIBTOOL) --mode=compile --tag=CC $(CC) $(CFLAGS) -o $@ -c $<
 
