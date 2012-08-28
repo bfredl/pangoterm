@@ -93,39 +93,39 @@ struct PangoTerm {
 
 static VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
 {
-  if(gdk_keyval >= GDK_F1 && gdk_keyval <= GDK_F35)
-    return VTERM_KEY_FUNCTION(gdk_keyval - GDK_F1 + 1);
+  if(gdk_keyval >= GDK_KEY_F1 && gdk_keyval <= GDK_KEY_F35)
+    return VTERM_KEY_FUNCTION(gdk_keyval - GDK_KEY_F1 + 1);
 
   switch(gdk_keyval) {
-  case GDK_BackSpace:
+  case GDK_KEY_BackSpace:
     return VTERM_KEY_BACKSPACE;
-  case GDK_Tab:
+  case GDK_KEY_Tab:
     return VTERM_KEY_TAB;
-  case GDK_Return:
+  case GDK_KEY_Return:
     return VTERM_KEY_ENTER;
-  case GDK_Escape:
+  case GDK_KEY_Escape:
     return VTERM_KEY_ESCAPE;
 
-  case GDK_Up:
+  case GDK_KEY_Up:
     return VTERM_KEY_UP;
-  case GDK_Down:
+  case GDK_KEY_Down:
     return VTERM_KEY_DOWN;
-  case GDK_Left:
+  case GDK_KEY_Left:
     return VTERM_KEY_LEFT;
-  case GDK_Right:
+  case GDK_KEY_Right:
     return VTERM_KEY_RIGHT;
 
-  case GDK_Insert:
+  case GDK_KEY_Insert:
     return VTERM_KEY_INS;
-  case GDK_Delete:
+  case GDK_KEY_Delete:
     return VTERM_KEY_DEL;
-  case GDK_Home:
+  case GDK_KEY_Home:
     return VTERM_KEY_HOME;
-  case GDK_End:
+  case GDK_KEY_End:
     return VTERM_KEY_END;
-  case GDK_Page_Up:
+  case GDK_KEY_Page_Up:
     return VTERM_KEY_PAGEUP;
-  case GDK_Page_Down:
+  case GDK_KEY_Page_Down:
     return VTERM_KEY_PAGEDOWN;
 
   case GDK_KEY_ISO_Left_Tab:
