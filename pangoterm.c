@@ -1121,9 +1121,7 @@ static GdkPixbuf *load_icon(GdkColor *background)
    *   http://git.gnome.org/browse/gtk+/tree/gtk/gtkicontheme.c#n3180
    */
 
-  gchar *background_str = gdk_color_to_string(background);
-
-  gchar *str = g_strconcat(
+  gchar *str = g_strdup_printf(
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
       "<svg version=\"1.1\"\n"
       "     xmlns=\"http://www.w3.org/2000/svg\"\n"
@@ -1132,14 +1130,15 @@ static GdkPixbuf *load_icon(GdkColor *background)
       "     height=\"64\">\n"
       "  <style type=\"text/css\">\n"
       "    #screen {\n"
-      "      fill: ", background_str, " !important;\n"
+      "      fill: #%02x%02x%02x !important;\n"
       "    }\n"
       "  </style>\n"
-      "  <xi:include href=\"" PANGOTERM_SHAREDIR "/pangoterm.svg" "\"/>\n"
+      "  <xi:include href=\"%s/pangoterm.svg" "\"/>\n"
       "</svg>",
-    NULL);
-
-  free(background_str);
+      background->red   / 255,
+      background->green / 255,
+      background->blue  / 255,
+      PANGOTERM_SHAREDIR);
 
   GInputStream *stream = g_memory_input_stream_new_from_data(str, -1, g_free);
 
