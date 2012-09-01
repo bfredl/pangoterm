@@ -1160,8 +1160,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->resizedfn = NULL;
 
   pt->n_fonts = 1;
-  pt->fonts = malloc(sizeof(char *));
+  pt->fonts = malloc(sizeof(char *) * 2);
   pt->fonts[0] = g_strdup("Monospace");
+  pt->fonts[1] = NULL;
   pt->font_size = 9.0;
 
   pt->cursor_blink_interval = 500;
@@ -1272,11 +1273,13 @@ void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
 
   pt->n_fonts = n_fonts;
 
-  pt->fonts = malloc(sizeof(char*) * n_fonts);
+  pt->fonts = malloc(sizeof(char*) * (n_fonts + 1));
   pt->fonts[0] = g_strdup(font);
 
   for(int i = 1; i < n_fonts; i++)
     pt->fonts[i] = g_strdup(alt_fonts[i-1]);
+
+  pt->fonts[n_fonts] = NULL;
 }
 
 void pangoterm_set_font_size(PangoTerm *pt, double size)
