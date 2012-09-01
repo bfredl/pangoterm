@@ -17,6 +17,7 @@ struct ConfigEntry {
   ConfigType type;
 
   void *var; /* ptr to char* or int or double */
+  int var_set;
 
   const char *desc;
   const char *argdesc;
@@ -38,6 +39,7 @@ extern ConfigEntry *configs;
       .shortname = shortname_,                                    \
       .type = CONF_TYPE_STRING,                                   \
       .var = &CONF_##name,                                        \
+      .var_set = FALSE,                                           \
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
       .dflt.s = dflt_,                                            \
@@ -54,6 +56,7 @@ extern ConfigEntry *configs;
       .shortname = shortname_,                                    \
       .type = CONF_TYPE_INT,                                      \
       .var = &CONF_##name,                                        \
+      .var_set = FALSE,                                           \
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
       .dflt.i = dflt_,                                            \
@@ -70,6 +73,7 @@ extern ConfigEntry *configs;
       .shortname = shortname_,                                    \
       .type = CONF_TYPE_DOUBLE,                                   \
       .var = &CONF_##name,                                        \
+      .var_set = FALSE,                                           \
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
       .dflt.d = dflt_,                                            \

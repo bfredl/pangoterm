@@ -53,16 +53,20 @@ static int conf_from_file(const char *path)
             g_scanner_error(scanner, "Expected \"%s\" to take a string value", cfg->longname);
             goto abort;
           }
-          if(!*(char**)cfg->var)
+          if(!cfg->var_set) {
             *(char**)cfg->var = g_strdup(scanner->value.v_string);
+            cfg->var_set = TRUE;
+          }
           break;
         case CONF_TYPE_INT:
           if(t != G_TOKEN_INT) {
             g_scanner_error(scanner, "Expected \"%s\" to take an integer value", cfg->longname);
             goto abort;
           }
-          if(*(int*)cfg->var == -1)
+          if(!cfg->var_set) {
             *(int*)cfg->var = scanner->value.v_int;
+            cfg->var_set = TRUE;
+          }
           break;
         case CONF_TYPE_DOUBLE:
           if(t == G_TOKEN_INT) {
@@ -73,8 +77,10 @@ static int conf_from_file(const char *path)
             g_scanner_error(scanner, "Expected \"%s\" to take a float value", cfg->longname);
             goto abort;
           }
-          if(*(double*)cfg->var == -1)
+          if(!cfg->var_set) {
             *(double*)cfg->var = scanner->value.v_float;
+            cfg->var_set = TRUE;
+          }
           break;
       }
     }
@@ -149,6 +155,23 @@ int conf_parse(int *argcp, char ***argvp)
     return 0;
   }
 
+  /* g_option doesn't give us any way to tell if variables were set or not;
+   * this is the best we can do
+   */
+  for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next) {
+    switch(cfg->type) {
+      case CONF_TYPE_STRING:
+        cfg->var_set = *(void**)cfg->var != NULL;
+        break;
+      case CONF_TYPE_INT:
+        cfg->var_set = *(int*)cfg->var != -1;
+        break;
+      case CONF_TYPE_DOUBLE:
+        cfg->var_set = *(double*)cfg->var != -1.0;
+        break;
+    }
+  }
+
   if(config_file) {
     if(!conf_from_file(config_file))
       return 0;
@@ -165,15 +188,15 @@ int conf_parse(int *argcp, char ***argvp)
   for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next) {
     switch(cfg->type) {
       case CONF_TYPE_STRING:
-        if(!*(char**)cfg->var)
+        if(!cfg->var_set)
           *(char**)cfg->var = cfg->dflt.s;
         break;
       case CONF_TYPE_INT:
-        if(*(int*)cfg->var == -1)
+        if(!cfg->var_set)
           *(int*)cfg->var = cfg->dflt.i;
         break;
       case CONF_TYPE_DOUBLE:
-        if(*(double*)cfg->var == -1.0)
+        if(!cfg->var_set)
           *(double*)cfg->var = cfg->dflt.d;
         break;
     }
