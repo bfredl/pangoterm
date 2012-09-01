@@ -51,5 +51,22 @@ int conf_parse(int *argcp, char ***argvp)
     return 0;
   }
 
+  for(cfg = configs; cfg; cfg = cfg->next) {
+    switch(cfg->type) {
+      case CONF_TYPE_STRING:
+        if(!*(char**)cfg->var)
+          *(char**)cfg->var = cfg->dflt.s;
+        break;
+      case CONF_TYPE_INT:
+        if(*(int*)cfg->var == -1)
+          *(int*)cfg->var = cfg->dflt.i;
+        break;
+      case CONF_TYPE_DOUBLE:
+        if(*(double*)cfg->var == -1.0)
+          *(double*)cfg->var = cfg->dflt.d;
+        break;
+    }
+  }
+
   return 1;
 }

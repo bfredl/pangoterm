@@ -20,6 +20,12 @@ struct ConfigEntry {
 
   const char *desc;
   const char *argdesc;
+
+  union {
+    char *s;
+    int i;
+    double d;
+  } dflt;
 };
 
 extern ConfigEntry *configs;
@@ -34,14 +40,14 @@ extern ConfigEntry *configs;
       .var = &CONF_##name,                                        \
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
+      .dflt.s = dflt_,                                            \
     };                                                            \
-    CONF_##name = dflt_;                                          \
     config.next = configs;                                        \
     configs = &config;                                            \
   }
 
 #define CONF_INT(name,shortname_,dflt_,desc_,argdesc_) \
-  static int CONF_##name; \
+  static int CONF_##name = -1; \
   static void __attribute__((constructor)) DECLARE_##name(void) { \
     static ConfigEntry config = {                                 \
       .longname = #name,                                          \
@@ -50,14 +56,14 @@ extern ConfigEntry *configs;
       .var = &CONF_##name,                                        \
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
+      .dflt.i = dflt_,                                            \
     };                                                            \
-    CONF_##name = dflt_;                                          \
     config.next = configs;                                        \
     configs = &config;                                            \
   }
 
 #define CONF_DOUBLE(name,shortname_,dflt_,desc_,argdesc_) \
-  static double CONF_##name; \
+  static double CONF_##name = -1.0; \
   static void __attribute__((constructor)) DECLARE_##name(void) { \
     static ConfigEntry config = {                                 \
       .longname = #name,                                          \
@@ -66,8 +72,8 @@ extern ConfigEntry *configs;
       .var = &CONF_##name,                                        \
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
+      .dflt.d = dflt_,                                            \
     };                                                            \
-    CONF_##name = dflt_;                                          \
     config.next = configs;                                        \
     configs = &config;                                            \
   }
