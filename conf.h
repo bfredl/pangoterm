@@ -7,7 +7,10 @@ typedef enum {
   CONF_TYPE_DOUBLE,
 } ConfigType;
 
-typedef struct {
+typedef struct ConfigEntry ConfigEntry;
+struct ConfigEntry {
+  ConfigEntry *next;
+
   const char *longname;
   char shortname;
 
@@ -17,15 +20,58 @@ typedef struct {
 
   const char *desc;
   const char *argdesc;
-} ConfigEntry;
+};
 
-#define CONF_STRING(name,shortname,var,desc,argdesc) \
-  { name, shortname, CONF_TYPE_STRING, &var, desc, argdesc }
-#define CONF_INT(name,shortname,var,desc,argdesc) \
-  { name, shortname, CONF_TYPE_INT, &var, desc, argdesc }
-#define CONF_DOUBLE(name,shortname,var,desc,argdesc) \
-  { name, shortname, CONF_TYPE_DOUBLE, &var, desc, argdesc }
+extern ConfigEntry *configs;
 
-int conf_parse(ConfigEntry *entries, int *argcp, char ***argvp);
+#define CONF_STRING(name,shortname_,dflt_,desc_,argdesc_) \
+  static char *CONF_##name; \
+  static void __attribute__((constructor)) DECLARE_##name(void) { \
+    static ConfigEntry config = {                                 \
+      .longname = #name,                                          \
+      .shortname = shortname_,                                    \
+      .type = CONF_TYPE_STRING,                                   \
+      .var = &CONF_##name,                                        \
+      .desc = desc_,                                              \
+      .argdesc = argdesc_,                                        \
+    };                                                            \
+    CONF_##name = dflt_;                                          \
+    config.next = configs;                                        \
+    configs = &config;                                            \
+  }
+
+#define CONF_INT(name,shortname_,dflt_,desc_,argdesc_) \
+  static int CONF_##name; \
+  static void __attribute__((constructor)) DECLARE_##name(void) { \
+    static ConfigEntry config = {                                 \
+      .longname = #name,                                          \
+      .shortname = shortname_,                                    \
+      .type = CONF_TYPE_INT,                                      \
+      .var = &CONF_##name,                                        \
+      .desc = desc_,                                              \
+      .argdesc = argdesc_,                                        \
+    };                                                            \
+    CONF_##name = dflt_;                                          \
+    config.next = configs;                                        \
+    configs = &config;                                            \
+  }
+
+#define CONF_DOUBLE(name,shortname_,dflt_,desc_,argdesc_) \
+  static double CONF_##name; \
+  static void __attribute__((constructor)) DECLARE_##name(void) { \
+    static ConfigEntry config = {                                 \
+      .longname = #name,                                          \
+      .shortname = shortname_,                                    \
+      .type = CONF_TYPE_DOUBLE,                                   \
+      .var = &CONF_##name,                                        \
+      .desc = desc_,                                              \
+      .argdesc = argdesc_,                                        \
+    };                                                            \
+    CONF_##name = dflt_;                                          \
+    config.next = configs;                                        \
+    configs = &config;                                            \
+  }
+
+int conf_parse(int *argcp, char ***argvp);
 
 #endif

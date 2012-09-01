@@ -5,19 +5,22 @@
 #include <glib.h>
 #include <gtk/gtk.h>
 
-int conf_parse(ConfigEntry *entries, int *argcp, char ***argvp)
+ConfigEntry *configs = NULL;
+
+int conf_parse(int *argcp, char ***argvp)
 {
-  int n_entries;
-  for(n_entries = 0; entries[n_entries].longname; n_entries++)
-    ;
+  int n_entries = 0;
+  for(ConfigEntry *p = configs; p; p = p->next)
+    n_entries++;
 
   GOptionEntry *option_entries = malloc(sizeof(GOptionEntry) * (n_entries + 1));
 
-  for(int i = 0; i < n_entries; i++) {
-    option_entries[i].long_name  = entries[i].longname;
-    option_entries[i].short_name = entries[i].shortname;
+  ConfigEntry *cfg = configs;
+  for(int i = 0; cfg; cfg = cfg->next, i++) {
+    option_entries[i].long_name  = cfg->longname;
+    option_entries[i].short_name = cfg->shortname;
     option_entries[i].flags      = 0;
-    switch(entries[i].type) {
+    switch(cfg->type) {
       case CONF_TYPE_STRING:
         option_entries[i].arg = G_OPTION_ARG_STRING;
         break;
@@ -28,9 +31,9 @@ int conf_parse(ConfigEntry *entries, int *argcp, char ***argvp)
         option_entries[i].arg = G_OPTION_ARG_DOUBLE;
         break;
     }
-    option_entries[i].arg_data        = entries[i].var;
-    option_entries[i].description     = entries[i].desc;
-    option_entries[i].arg_description = entries[i].argdesc;
+    option_entries[i].arg_data        = cfg->var;
+    option_entries[i].description     = cfg->desc;
+    option_entries[i].arg_description = cfg->argdesc;
   }
 
   option_entries[n_entries].long_name = NULL;

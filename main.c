@@ -27,37 +27,20 @@
 
 #include "conf.h"
 
-static char *default_fg = "gray90";
-static char *default_bg = "black";
+CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
+CONF_STRING(background, 0, "black",  "Background colour", "COL");
+CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
 
-static char *cursor_col_str = "white";
+CONF_STRING(font, 0,   "DejaVu Sans Mono", "Font name", "STR");
+CONF_DOUBLE(size, 's', 9.0,                "Font size", "NUM");
 
-static char *default_font = "DejaVu Sans Mono";
-static double default_size = 9.0;
+CONF_STRING(title, 0, "pangoterm", "Title", "STR");
 
-static char *default_title = "pangoterm";
-
-static int default_lines = 25;
-static int default_cols  = 80;
+CONF_INT(lines, 0, 25, "Number of lines",   "NUM");
+CONF_INT(cols,  0, 80, "Number of columns", "NUM");
 
 static char *alt_fonts[] = {
   "Courier 10 Pitch",
-};
-
-static ConfigEntry entries[] = {
-  CONF_STRING("foreground", 0, default_fg, "Default foreground colour", "COL"),
-  CONF_STRING("background", 0, default_bg, "Default background colour", "COL"),
-  CONF_STRING("cursor",     0, cursor_col_str, "Cursor colour", "COL"),
-
-  CONF_STRING("font", 0,   default_font, "Font name", "STR"),
-  CONF_DOUBLE("size", 's', default_size, "Font size", "NUM"),
-
-  CONF_STRING("title", 0, default_title, "Title", "STR"),
-
-  CONF_INT("lines", 0, default_lines, "Number of lines", "NUM"),
-  CONF_INT("cols",  0, default_cols,  "Number of cols",  "NUM"),
-
-  { NULL },
 };
 
 static int master;
@@ -127,31 +110,31 @@ static gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer 
 
 int main(int argc, char *argv[])
 {
-  if(!conf_parse(entries, &argc, &argv))
+  if(!conf_parse(&argc, &argv))
     exit(1);
 
   gtk_init(&argc, &argv);
   setlocale(LC_CTYPE, NULL);
 
-  PangoTerm *pt = pangoterm_new(default_lines, default_cols);
+  PangoTerm *pt = pangoterm_new(CONF_lines, CONF_cols);
 
   GdkColor fg_col;
-  gdk_color_parse(default_fg, &fg_col);
+  gdk_color_parse(CONF_foreground, &fg_col);
 
   GdkColor bg_col;
-  gdk_color_parse(default_bg, &bg_col);
+  gdk_color_parse(CONF_background, &bg_col);
 
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   GdkColor cursor_col;
-  gdk_color_parse(cursor_col_str, &cursor_col);
+  gdk_color_parse(CONF_cursor, &cursor_col);
 
   pangoterm_set_cursor_color(pt, &cursor_col);
 
-  pangoterm_set_fonts(pt, default_font, alt_fonts);
-  pangoterm_set_font_size(pt, default_size);
+  pangoterm_set_fonts(pt, CONF_font, alt_fonts);
+  pangoterm_set_font_size(pt, CONF_size);
 
-  pangoterm_set_title(pt, default_title);
+  pangoterm_set_title(pt, CONF_title);
 
   /* None of the docs about termios explain how to construct a new one of
    * these, so this is largely a guess */
@@ -188,7 +171,7 @@ int main(int argc, char *argv[])
   termios.c_cc[VMIN]     = 1;
   termios.c_cc[VTIME]    = 0;
 
-  struct winsize size = { default_lines, default_cols, 0, 0 };
+  struct winsize size = { CONF_lines, CONF_cols, 0, 0 };
   pid_t kid = forkpty(&master, NULL, &termios, &size);
   if(kid == 0) {
     /* Restore the ISIG signals back to defaults */
