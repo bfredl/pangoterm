@@ -1,11 +1,100 @@
 #include "conf.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #include <glib.h>
 #include <gtk/gtk.h>
 
 ConfigEntry *configs = NULL;
+
+static int conf_from_file(const char *path)
+{
+  int fd = open(path, O_RDONLY);
+  if(!fd) {
+    fprintf(stderr, "Cannot open configuration file %s: %s\n", path, strerror(errno));
+    return 0;
+  }
+
+  GScanner *scanner = g_scanner_new(NULL);
+  scanner->input_name = g_strdup(path);
+  g_scanner_input_file(scanner, fd);
+
+  GTokenType t;
+  while((t = g_scanner_get_next_token(scanner)) != G_TOKEN_EOF) {
+    if(t == G_TOKEN_IDENTIFIER) {
+      char *name = scanner->value.v_identifier;
+
+      ConfigEntry *cfg = NULL;
+      for(ConfigEntry *p = configs; p; p = p->next) {
+        if(strcmp(name, p->longname) != 0)
+          continue;
+        cfg = p;
+        break;
+      }
+
+      if(!cfg) {
+        g_scanner_error(scanner, "\"%s\" is not a recognised setting name", name);
+        goto abort;
+      }
+
+      if(g_scanner_get_next_token(scanner) != G_TOKEN_EQUAL_SIGN) {
+        g_scanner_error(scanner, "Expected '='");
+        goto abort;
+      }
+
+      t = g_scanner_get_next_token(scanner);
+      switch(cfg->type) {
+        case CONF_TYPE_STRING:
+          if(t != G_TOKEN_STRING) {
+            g_scanner_error(scanner, "Expected \"%s\" to take a string value", cfg->longname);
+            goto abort;
+          }
+          if(!*(char**)cfg->var)
+            *(char**)cfg->var = g_strdup(scanner->value.v_string);
+          break;
+        case CONF_TYPE_INT:
+          if(t != G_TOKEN_INT) {
+            g_scanner_error(scanner, "Expected \"%s\" to take an integer value", cfg->longname);
+            goto abort;
+          }
+          if(*(int*)cfg->var == -1)
+            *(int*)cfg->var = scanner->value.v_int;
+          break;
+        case CONF_TYPE_DOUBLE:
+          if(t == G_TOKEN_INT) {
+            t = G_TOKEN_FLOAT;
+            scanner->value.v_float = scanner->value.v_int;
+          }
+          if(t != G_TOKEN_FLOAT) {
+            g_scanner_error(scanner, "Expected \"%s\" to take a float value", cfg->longname);
+            goto abort;
+          }
+          if(*(double*)cfg->var == -1)
+            *(double*)cfg->var = scanner->value.v_float;
+          break;
+      }
+    }
+    else {
+      g_scanner_error(scanner, "Expected a setting name");
+      goto abort;
+    }
+  }
+
+  g_scanner_destroy(scanner);
+  close(fd);
+
+  return 1;
+
+abort:
+  g_scanner_destroy(scanner);
+  close(fd);
+
+  return 0;
+}
 
 int conf_parse(int *argcp, char ***argvp)
 {
@@ -13,10 +102,19 @@ int conf_parse(int *argcp, char ***argvp)
   for(ConfigEntry *p = configs; p; p = p->next)
     n_entries++;
 
-  GOptionEntry *option_entries = malloc(sizeof(GOptionEntry) * (n_entries + 1));
+  GOptionEntry *option_entries = malloc(sizeof(GOptionEntry) * (n_entries + 2));
 
-  ConfigEntry *cfg = configs;
-  for(int i = 0; cfg; cfg = cfg->next, i++) {
+  char *config_file = NULL;
+  option_entries[0].long_name  = "config-file";
+  option_entries[0].short_name = 0;
+  option_entries[0].flags      = 0;
+  option_entries[0].arg        = G_OPTION_ARG_FILENAME;
+  option_entries[0].arg_data   = &config_file;
+  option_entries[0].description     = "Path to config file";
+  option_entries[0].arg_description = "PATH";
+
+  int i = 1;
+  for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next, i++) {
     option_entries[i].long_name  = cfg->longname;
     option_entries[i].short_name = cfg->shortname;
     option_entries[i].flags      = 0;
@@ -36,7 +134,7 @@ int conf_parse(int *argcp, char ***argvp)
     option_entries[i].arg_description = cfg->argdesc;
   }
 
-  option_entries[n_entries].long_name = NULL;
+  option_entries[i].long_name = NULL;
 
   GError *args_error = NULL;
   GOptionContext *args_context;
@@ -51,7 +149,20 @@ int conf_parse(int *argcp, char ***argvp)
     return 0;
   }
 
-  for(cfg = configs; cfg; cfg = cfg->next) {
+  if(config_file) {
+    if(!conf_from_file(config_file))
+      return 0;
+  }
+  else {
+    config_file = g_strdup_printf("%s/.config/pangoterm.cfg", getenv("HOME"));
+    struct stat st;
+    if(stat(config_file, &st) == 0)
+      if(!conf_from_file(config_file))
+        return 0;
+    g_free(config_file);
+  }
+
+  for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next) {
     switch(cfg->type) {
       case CONF_TYPE_STRING:
         if(!*(char**)cfg->var)
