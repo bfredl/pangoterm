@@ -121,7 +121,13 @@ int conf_parse(int *argcp, char ***argvp)
 
   int i = 1;
   for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next, i++) {
-    option_entries[i].long_name  = cfg->longname;
+    option_entries[i].long_name  = g_strdup(cfg->longname);
+
+    /* Convert foo_bar to foo-bar; easier on commandline */
+    for(char *s = (char*)option_entries[i].long_name; s[0]; s++)
+      if(s[0] == '_')
+        s[0] = '-';
+
     option_entries[i].short_name = cfg->shortname;
     option_entries[i].flags      = 0;
     switch(cfg->type) {
