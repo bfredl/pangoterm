@@ -5,6 +5,7 @@ typedef enum {
   CONF_TYPE_STRING,
   CONF_TYPE_INT,
   CONF_TYPE_DOUBLE,
+  CONF_TYPE_BOOL,
 } ConfigType;
 
 typedef struct ConfigEntry ConfigEntry;
@@ -16,7 +17,7 @@ struct ConfigEntry {
 
   ConfigType type;
 
-  void *var; /* ptr to char* or int or double */
+  void *var;    /* ptr to char* or int or double */
   int var_set;
 
   const char *desc;
@@ -77,6 +78,23 @@ extern ConfigEntry *configs;
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
       .dflt.d = dflt_,                                            \
+    };                                                            \
+    config.next = configs;                                        \
+    configs = &config;                                            \
+  }
+
+#define CONF_BOOL(name,shortname_,dflt_,desc_) \
+  static int CONF_##name = FALSE; \
+  static void __attribute__((constructor)) DECLARE_##name(void) { \
+    static ConfigEntry config = {                                 \
+      .longname = #name,                                          \
+      .shortname = shortname_,                                    \
+      .type = CONF_TYPE_BOOL,                                     \
+      .var = &CONF_##name,                                        \
+      .var_set = FALSE,                                           \
+      .desc = desc_,                                              \
+      .argdesc = NULL,                                            \
+      .dflt.i = dflt_,                                            \
     };                                                            \
     config.next = configs;                                        \
     configs = &config;                                            \
