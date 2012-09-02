@@ -14,6 +14,9 @@ CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
 
 CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
 
+CONF_BOOL(bold_highbright, 0, TRUE, "Bold is high-brightness");
+CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -1184,11 +1187,11 @@ PangoTerm *pangoterm_new(int rows, int cols)
   vterm_parser_set_utf8(pt->vt, 1);
 
   /* Set up state */
-  vterm_state_set_bold_highbright(vterm_obtain_state(pt->vt), 1);
+  vterm_state_set_bold_highbright(vterm_obtain_state(pt->vt), CONF_bold_highbright);
 
   /* Set up screen */
   pt->vts = vterm_obtain_screen(pt->vt);
-  vterm_screen_enable_altscreen(pt->vts, 1);
+  vterm_screen_enable_altscreen(pt->vts, CONF_altscreen);
   vterm_screen_set_callbacks(pt->vts, &cb, pt);
   vterm_screen_set_damage_merge(pt->vts, VTERM_DAMAGE_SCROLL);
 
