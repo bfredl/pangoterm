@@ -10,6 +10,8 @@
 
 CONF_STRING(cursor, 0, "white", "Cursor colour", "COL");
 
+CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -60,7 +62,6 @@ struct PangoTerm {
   int cell_height;
 
   int has_focus;
-  int cursor_blink_interval;
   int cursor_visible;    /* VTERM_PROP_CURSORVISIBLE */
   int cursor_blinkstate; /* during high state of blink */
   int cursor_hidden_for_redraw; /* true to temporarily hide during redraw */
@@ -609,7 +610,7 @@ static gboolean cursor_blink(void *user_data)
 
 static void cursor_start_blinking(PangoTerm *pt)
 {
-  pt->cursor_timer_id = g_timeout_add(pt->cursor_blink_interval, cursor_blink, pt);
+  pt->cursor_timer_id = g_timeout_add(CONF_cursor_blink_interval, cursor_blink, pt);
 
   /* Should start blinking in visible state */
   pt->cursor_blinkstate = 1;
@@ -1169,8 +1170,6 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->fonts[1] = NULL;
   pt->font_size = 9.0;
 
-  pt->cursor_blink_interval = 500;
-
   gdk_color_parse(CONF_cursor, &pt->cursor_col);
 
   /* Create VTerm */
@@ -1202,7 +1201,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gdk_window_set_cursor(GDK_WINDOW(pt->termdraw), gdk_cursor_new(GDK_XTERM));
 
-  pt->cursor_timer_id = g_timeout_add(pt->cursor_blink_interval, cursor_blink, pt);
+  pt->cursor_timer_id = g_timeout_add(CONF_cursor_blink_interval, cursor_blink, pt);
   pt->cursor_blinkstate = 1;
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
