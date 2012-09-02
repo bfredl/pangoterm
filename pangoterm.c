@@ -610,6 +610,9 @@ static gboolean cursor_blink(void *user_data)
 
 static void cursor_start_blinking(PangoTerm *pt)
 {
+  if(!CONF_cursor_blink_interval)
+    return;
+
   pt->cursor_timer_id = g_timeout_add(CONF_cursor_blink_interval, cursor_blink, pt);
 
   /* Should start blinking in visible state */
@@ -1201,8 +1204,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gdk_window_set_cursor(GDK_WINDOW(pt->termdraw), gdk_cursor_new(GDK_XTERM));
 
-  pt->cursor_timer_id = g_timeout_add(CONF_cursor_blink_interval, cursor_blink, pt);
-  pt->cursor_blinkstate = 1;
+  cursor_start_blinking(pt);
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
   GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
