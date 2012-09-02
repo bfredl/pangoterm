@@ -31,7 +31,6 @@ CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
 CONF_STRING(background, 0, "black",  "Background colour", "COL");
 
 CONF_STRING(font, 0,   "DejaVu Sans Mono", "Font name", "STR");
-CONF_DOUBLE(size, 's', 9.0,                "Font size", "NUM");
 
 CONF_STRING(title, 0, "pangoterm", "Title", "STR");
 
@@ -126,7 +125,6 @@ int main(int argc, char *argv[])
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   pangoterm_set_fonts(pt, CONF_font, alt_fonts);
-  pangoterm_set_font_size(pt, CONF_size);
 
   pangoterm_set_title(pt, CONF_title);
 

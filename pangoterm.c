@@ -10,6 +10,8 @@
 
 CONF_STRING(cursor, 0, "white", "Cursor colour", "COL");
 
+CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
+
 CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
 
 #ifdef DEBUG
@@ -1171,7 +1173,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->fonts = malloc(sizeof(char *) * 2);
   pt->fonts[0] = g_strdup("Monospace");
   pt->fonts[1] = NULL;
-  pt->font_size = 9.0;
+  pt->font_size = CONF_size;
 
   gdk_color_parse(CONF_cursor, &pt->cursor_col);
 
