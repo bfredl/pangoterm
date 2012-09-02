@@ -153,13 +153,16 @@ int conf_parse(int *argcp, char ***argvp)
 
   args_context = g_option_context_new("commandline...");
   g_option_context_add_main_entries(args_context, option_entries, NULL);
-  free(option_entries);
 
   g_option_context_add_group(args_context, gtk_get_option_group(TRUE));
   if(!g_option_context_parse(args_context, argcp, argvp, &args_error)) {
     fprintf(stderr, "Option parsing failed: %s\n", args_error->message);
     return 0;
   }
+
+  for(i = 1; i < n_entries + 1; i++)
+    g_free((void*)option_entries[i].long_name);
+  free(option_entries);
 
   /* g_option doesn't give us any way to tell if variables were set or not;
    * this is the best we can do
