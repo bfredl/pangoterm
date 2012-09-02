@@ -29,7 +29,6 @@
 
 CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
 CONF_STRING(background, 0, "black",  "Background colour", "COL");
-CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
 
 CONF_STRING(font, 0,   "DejaVu Sans Mono", "Font name", "STR");
 CONF_DOUBLE(size, 's', 9.0,                "Font size", "NUM");
@@ -125,11 +124,6 @@ int main(int argc, char *argv[])
   gdk_color_parse(CONF_background, &bg_col);
 
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
-
-  GdkColor cursor_col;
-  gdk_color_parse(CONF_cursor, &cursor_col);
-
-  pangoterm_set_cursor_color(pt, &cursor_col);
 
   pangoterm_set_fonts(pt, CONF_font, alt_fonts);
   pangoterm_set_font_size(pt, CONF_size);

@@ -6,6 +6,10 @@
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
 
+#include "conf.h"
+
+CONF_STRING(cursor, 0, "white", "Cursor colour", "COL");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -1167,6 +1171,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   pt->cursor_blink_interval = 500;
 
+  gdk_color_parse(CONF_cursor, &pt->cursor_col);
+
   /* Create VTerm */
   pt->vt = vterm_new(rows, cols);
 
@@ -1256,11 +1262,6 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_
   GdkPixbuf *icon = load_icon(bg_col);
   gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
   g_object_unref(icon);
-}
-
-void pangoterm_set_cursor_color(PangoTerm *pt, GdkColor *cursor_col)
-{
-  pt->cursor_col = *cursor_col;
 }
 
 void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
