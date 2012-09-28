@@ -846,15 +846,17 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   if(event->is_modifier)
     return FALSE;
 
-  if(event->keyval == GDK_KEY_Insert && event->state & GDK_SHIFT_MASK) {
-    /* Shift-Insert pastes clipboard */
+  if((event->keyval == GDK_KEY_Insert && event->state & GDK_SHIFT_MASK) ||
+     ((event->keyval == 'v' || event->keyval == 'V') &&
+      event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK)) {
+    /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
     gchar *str = gtk_clipboard_wait_for_text(pt->selection_clipboard);
 
     term_push_string(pt, str);
     return TRUE;
   }
-  if((event->keyval == 'c' || event->keyval == 'C')
-     && event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK) {
+  if((event->keyval == 'c' || event->keyval == 'C') &&
+     event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK) {
     /* Ctrl-Shift-C copies to clipboard */
     if(pt->highlight_start.row == -1)
       return TRUE;
