@@ -37,6 +37,8 @@ CONF_STRING(title, 0, "pangoterm", "Title", "STR");
 CONF_INT(lines, 0, 25, "Number of lines",   "NUM");
 CONF_INT(cols,  0, 80, "Number of columns", "NUM");
 
+CONF_STRING(term, 0, "xterm", "Terminal type", "STR");
+
 static char *alt_fonts[] = {
   "Courier 10 Pitch",
 };
@@ -172,7 +174,10 @@ int main(int argc, char *argv[])
     signal(SIGSTOP, SIG_DFL);
     signal(SIGCONT, SIG_DFL);
 
-    putenv("TERM=xterm");
+    gchar *term = g_strdup_printf("TERM=%s", CONF_term);
+    putenv(term);
+    /* Do not free 'term', it is part of the environment */
+
     if(argc > 1) {
       execvp(argv[1], argv + 1);
       fprintf(stderr, "Cannot exec(%s) - %s\n", argv[1], strerror(errno));
