@@ -82,9 +82,11 @@ struct PangoTerm {
   guint cursor_timer_id;
 
   GtkWidget *termwin;
-  cairo_surface_t *buffer;
 
+  cairo_surface_t *buffer;
   GdkDrawable *termdraw;
+  /* area in buffer that needs flushing to termdraw */
+  GdkRectangle dirty_area;
 
   /* These four positions relate to the click/drag highlight state
    * row == -1 for invalid */
@@ -298,6 +300,17 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
   cairo_destroy(gc);
 }
 
+static void blit_dirty(PangoTerm *pt)
+{
+  if(!pt->dirty_area.height || !pt->dirty_area.width)
+    return;
+
+  blit_buffer(pt, &pt->dirty_area);
+
+  pt->dirty_area.width  = 0;
+  pt->dirty_area.height = 0;
+}
+
 static void flush_pending(PangoTerm *pt)
 {
   if(!pt->pending_area.width)
@@ -353,8 +366,10 @@ static void flush_pending(PangoTerm *pt)
     g_string_truncate(pt->glyphs, 0);
   }
 
-  /* Flush our changes */
-  blit_buffer(pt, &pt->pending_area);
+  if(pt->dirty_area.width && pt->pending_area.height)
+    gdk_rectangle_union(&pt->pending_area, &pt->dirty_area, &pt->dirty_area);
+  else
+    pt->dirty_area = pt->pending_area;
 
   pt->pending_area.width = 0;
   pt->pending_area.height = 0;
@@ -542,8 +557,6 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
           break;
         }
 
-        blit_buffer(pt, &destarea);
-
         cairo_destroy(gc);
       }
 
@@ -608,6 +621,7 @@ static gboolean cursor_blink(void *user_data)
     repaint_cell(pt, pt->cursorpos);
 
     flush_pending(pt);
+    blit_dirty(pt);
   }
 
   return TRUE;
@@ -665,6 +679,7 @@ static void cancel_highlight(PangoTerm *pt)
 
   repaint_flow(pt, old_start, old_stop);
   flush_pending(pt);
+  blit_dirty(pt);
 }
 
 /*
@@ -695,6 +710,7 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   PangoTerm *pt = user_data;
 
   flush_pending(pt);
+  blit_dirty(pt);
 
   if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
     int start_inside = vterm_rect_contains(src, pt->highlight_start);
@@ -938,6 +954,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
     flush_pending(pt);
+    blit_dirty(pt);
     store_clipboard(pt);
   }
   else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
@@ -949,6 +966,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
     flush_pending(pt);
+    blit_dirty(pt);
     store_clipboard(pt);
   }
 
@@ -1012,6 +1030,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
       repaint_flow(pt, old_end, pt->drag_pos);
 
     flush_pending(pt);
+    blit_dirty(pt);
   }
 
   return FALSE;
@@ -1108,6 +1127,7 @@ static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer us
     repaint_cell(pt, pt->cursorpos);
 
     flush_pending(pt);
+    blit_dirty(pt);
   }
 }
 
@@ -1120,6 +1140,7 @@ static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer u
     repaint_cell(pt, pt->cursorpos);
 
     flush_pending(pt);
+    blit_dirty(pt);
   }
 }
 
@@ -1384,5 +1405,6 @@ void pangoterm_end_update(PangoTerm *pt)
   repaint_cell(pt, pt->cursorpos);
 
   flush_pending(pt);
+  blit_dirty(pt);
   term_flush_output(pt);
 }
