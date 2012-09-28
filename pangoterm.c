@@ -99,7 +99,8 @@ struct PangoTerm {
   VTermPos highlight_start;
   VTermPos highlight_stop;
 
-  GtkClipboard *primary_clipboard;
+  GtkClipboard *selection_primary;
+  GtkClipboard *selection_clipboard;
 };
 
 /*
@@ -660,8 +661,8 @@ static void store_clipboard(PangoTerm *pt)
 
   gchar *text = fetch_flow_text(pt, start, stop);
 
-  gtk_clipboard_clear(pt->primary_clipboard);
-  gtk_clipboard_set_text(pt->primary_clipboard, text, -1);
+  gtk_clipboard_clear(pt->selection_primary);
+  gtk_clipboard_set_text(pt->selection_primary, text, -1);
 
   free(text);
 }
@@ -845,6 +846,14 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   if(event->is_modifier)
     return FALSE;
 
+  if(event->keyval == GDK_KEY_Insert && event->state & GDK_SHIFT_MASK) {
+    /* Shift-Insert pastes clipboard */
+    gchar *str = gtk_clipboard_wait_for_text(pt->selection_clipboard);
+
+    term_push_string(pt, str);
+    return TRUE;
+  }
+
   VTermModifier state = convert_modifier(event->state);
   VTermKey keyval = convert_keyval(event->keyval, &state);
 
@@ -900,8 +909,8 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     term_flush_output(pt);
   }
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
-    /* Middle-click paste */
-    gchar *str = gtk_clipboard_wait_for_text(pt->primary_clipboard);
+    /* Middle-click pastes primary selection */
+    gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
 
     term_push_string(pt, str);
   }
@@ -1256,7 +1265,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->highlight_start.row = -1;
   pt->highlight_stop.row  = -1;
 
-  pt->primary_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+  pt->selection_primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+  pt->selection_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
 
   return pt;
 }
