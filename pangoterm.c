@@ -853,6 +853,20 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     term_push_string(pt, str);
     return TRUE;
   }
+  if((event->keyval == 'c' || event->keyval == 'C')
+     && event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK) {
+    /* Ctrl-Shift-C copies to clipboard */
+    if(pt->highlight_start.row == -1)
+      return TRUE;
+
+    gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
+
+    gtk_clipboard_clear(pt->selection_clipboard);
+    gtk_clipboard_set_text(pt->selection_clipboard, text, -1);
+
+    free(text);
+    return TRUE;
+  }
 
   VTermModifier state = convert_modifier(event->state);
   VTermKey keyval = convert_keyval(event->keyval, &state);
