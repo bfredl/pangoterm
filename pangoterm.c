@@ -30,9 +30,12 @@ struct PangoTerm {
   VTermMouseFunc mousefunc;
   void *mousedata;
 
+  GdkRectangle pending_area;
+  /* Pending glyphs to flush in flush_pending */
   GString *glyphs;
   GArray *glyph_widths;
-  GdkRectangle glyph_area;
+  /* Pending area to erase in flush_pending */
+  int erase_columns;
 
   struct {
     struct {
@@ -295,65 +298,67 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
   cairo_destroy(gc);
 }
 
-static void flush_glyphs(PangoTerm *pt)
+static void flush_pending(PangoTerm *pt)
 {
-  if(!pt->glyphs->len) {
-    pt->glyph_area.width = 0;
-    pt->glyph_area.height = 0;
+  if(!pt->pending_area.width)
     return;
-  }
+
   cairo_t* gc = cairo_create(pt->buffer);
-  gdk_cairo_rectangle(gc, &pt->glyph_area);
+  gdk_cairo_rectangle(gc, &pt->pending_area);
   cairo_clip(gc);
-
-  PangoLayout *layout = pt->pen.layout;
-
-  pango_layout_set_text(layout, pt->glyphs->str, pt->glyphs->len);
-
-  if(pt->pen.pangoattrs)
-    pango_layout_set_attributes(layout, pt->pen.pangoattrs);
-
-  // Now adjust all the widths
-  PangoLayoutIter *iter = pango_layout_get_iter(layout);
-  do {
-    PangoLayoutRun *run = pango_layout_iter_get_run(iter);
-    if(!run)
-      continue;
-
-    PangoGlyphString *glyph_str = run->glyphs;
-    int i;
-    for(i = 0; i < glyph_str->num_glyphs; i++) {
-      PangoGlyphInfo *glyph = &glyph_str->glyphs[i];
-      int str_index = run->item->offset + glyph_str->log_clusters[i];
-      int char_width = g_array_index(pt->glyph_widths, int, str_index);
-      if(glyph->geometry.width && glyph->geometry.width != char_width * pt->cell_width_pango) {
-        /* Adjust its x_offset to match the width change, to ensure it still
-         * remains centered in the cell */
-        glyph->geometry.x_offset -= (glyph->geometry.width - char_width * pt->cell_width_pango) / 2;
-        glyph->geometry.width = char_width * pt->cell_width_pango;
-      }
-    }
-  } while(pango_layout_iter_next_run(iter));
-
-  pango_layout_iter_free(iter);
 
   /* Background fill */
   GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
   gdk_cairo_set_source_color(gc, &bg);
   cairo_paint(gc);
 
-  /* Draw glyphs */
-  GdkColor fg = pt->pen.attrs.reverse ? pt->pen.bg_col : pt->pen.fg_col;
-  gdk_cairo_set_source_color(gc, &fg);
-  cairo_move_to(gc, pt->glyph_area.x, pt->glyph_area.y);
-  pango_cairo_show_layout(gc, layout);
+  if(pt->glyphs->len) {
+    PangoLayout *layout = pt->pen.layout;
+
+    pango_layout_set_text(layout, pt->glyphs->str, pt->glyphs->len);
+
+    if(pt->pen.pangoattrs)
+      pango_layout_set_attributes(layout, pt->pen.pangoattrs);
+
+    // Now adjust all the widths
+    PangoLayoutIter *iter = pango_layout_get_iter(layout);
+    do {
+      PangoLayoutRun *run = pango_layout_iter_get_run(iter);
+      if(!run)
+        continue;
+
+      PangoGlyphString *glyph_str = run->glyphs;
+      int i;
+      for(i = 0; i < glyph_str->num_glyphs; i++) {
+        PangoGlyphInfo *glyph = &glyph_str->glyphs[i];
+        int str_index = run->item->offset + glyph_str->log_clusters[i];
+        int char_width = g_array_index(pt->glyph_widths, int, str_index);
+        if(glyph->geometry.width && glyph->geometry.width != char_width * pt->cell_width_pango) {
+          /* Adjust its x_offset to match the width change, to ensure it still
+           * remains centered in the cell */
+          glyph->geometry.x_offset -= (glyph->geometry.width - char_width * pt->cell_width_pango) / 2;
+          glyph->geometry.width = char_width * pt->cell_width_pango;
+        }
+      }
+    } while(pango_layout_iter_next_run(iter));
+
+    pango_layout_iter_free(iter);
+
+    /* Draw glyphs */
+    GdkColor fg = pt->pen.attrs.reverse ? pt->pen.bg_col : pt->pen.fg_col;
+    gdk_cairo_set_source_color(gc, &fg);
+    cairo_move_to(gc, pt->pending_area.x, pt->pending_area.y);
+    pango_cairo_show_layout(gc, layout);
+
+    g_string_truncate(pt->glyphs, 0);
+  }
+
   /* Flush our changes */
-  blit_buffer(pt, &pt->glyph_area);
+  blit_buffer(pt, &pt->pending_area);
 
-  pt->glyph_area.width = 0;
-  pt->glyph_area.height = 0;
-
-  g_string_truncate(pt->glyphs, 0);
+  pt->pending_area.width = 0;
+  pt->pending_area.height = 0;
+  pt->erase_columns = 0;
 
   cairo_destroy(gc);
 }
@@ -362,8 +367,10 @@ static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos
 {
   GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width);
 
-  if(destarea.y != pt->glyph_area.y || destarea.x != pt->glyph_area.x + pt->glyph_area.width)
-    flush_glyphs(pt);
+  if(pt->erase_columns)
+    flush_pending(pt);
+  if(destarea.y != pt->pending_area.y || destarea.x != pt->pending_area.x + pt->pending_area.width)
+    flush_pending(pt);
 
   char *chars_str = g_ucs4_to_utf8(chars, -1, NULL, NULL, NULL);
 
@@ -374,10 +381,27 @@ static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos
 
   g_free(chars_str);
 
-  if(pt->glyph_area.width && pt->glyph_area.height)
-    gdk_rectangle_union(&destarea, &pt->glyph_area, &pt->glyph_area);
+  if(pt->pending_area.width && pt->pending_area.height)
+    gdk_rectangle_union(&destarea, &pt->pending_area, &pt->pending_area);
   else
-    pt->glyph_area = destarea;
+    pt->pending_area = destarea;
+}
+
+static void put_erase(PangoTerm *pt, int width, VTermPos pos)
+{
+  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width);
+
+  if(!pt->erase_columns)
+    flush_pending(pt);
+  if(destarea.y != pt->pending_area.y || destarea.x != pt->pending_area.x + pt->pending_area.width)
+    flush_pending(pt);
+
+  if(pt->pending_area.width && pt->pending_area.height)
+    gdk_rectangle_union(&destarea, &pt->pending_area, &pt->pending_area);
+  else
+    pt->pending_area = destarea;
+
+  pt->erase_columns += width;
 }
 
 static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
@@ -395,13 +419,13 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
 
   if(cell->attrs.bold != pt->pen.attrs.bold) {
     int bold = pt->pen.attrs.bold = cell->attrs.bold;
-    flush_glyphs(pt);
+    flush_pending(pt);
     ADDATTR(pango_attr_weight_new(bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL));
   }
 
   if(cell->attrs.underline != pt->pen.attrs.underline) {
     int underline = pt->pen.attrs.underline = cell->attrs.underline;
-    flush_glyphs(pt);
+    flush_pending(pt);
     ADDATTR(pango_attr_underline_new(underline == 1 ? PANGO_UNDERLINE_SINGLE :
                                      underline == 2 ? PANGO_UNDERLINE_DOUBLE :
                                                       PANGO_UNDERLINE_NONE));
@@ -409,18 +433,18 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
 
   if(cell->attrs.italic != pt->pen.attrs.italic) {
     int italic = pt->pen.attrs.italic = cell->attrs.italic;
-    flush_glyphs(pt);
+    flush_pending(pt);
     ADDATTR(pango_attr_style_new(italic ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL));
   }
 
   if(cell->attrs.reverse != pt->pen.attrs.reverse) {
-    flush_glyphs(pt);
+    flush_pending(pt);
     pt->pen.attrs.reverse = cell->attrs.reverse;
   }
 
   if(cell->attrs.strike != pt->pen.attrs.strike) {
     int strike = pt->pen.attrs.strike = cell->attrs.strike;
-    flush_glyphs(pt);
+    flush_pending(pt);
     ADDATTR(pango_attr_strikethrough_new(strike));
   }
 
@@ -428,7 +452,7 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     int font = pt->pen.attrs.font = cell->attrs.font;
     if(font >= pt->n_fonts)
       font = 0;
-    flush_glyphs(pt);
+    flush_pending(pt);
     ADDATTR(pango_attr_family_new(pt->fonts[font]));
   }
 
@@ -444,7 +468,7 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
   }
 
   if(col.red   != pt->pen.fg_col.red || col.green != pt->pen.fg_col.green || col.blue  != pt->pen.fg_col.blue) {
-    flush_glyphs(pt);
+    flush_pending(pt);
     pt->pen.fg_col = col;
   }
 
@@ -456,27 +480,9 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     col = pt->cursor_col;
 
   if(col.red   != pt->pen.bg_col.red || col.green != pt->pen.bg_col.green || col.blue  != pt->pen.bg_col.blue) {
-    flush_glyphs(pt);
+    flush_pending(pt);
     pt->pen.bg_col = col;
   }
-}
-
-static void erase_rect(PangoTerm *pt, VTermRect rect)
-{
-  flush_glyphs(pt);
-
-  cairo_t *gc = cairo_create(pt->buffer);
-
-  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERMRECT(pt, rect);
-  gdk_cairo_rectangle(gc, &destarea);
-  cairo_clip(gc);
-
-  GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
-  gdk_cairo_set_source_color(gc, &bg);
-  cairo_paint(gc);
-  cairo_destroy(gc);
-
-  blit_buffer(pt, &destarea);
 }
 
 static void repaint_rect(PangoTerm *pt, VTermRect rect)
@@ -509,20 +515,14 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
       chpen(&cell, pt, cursor_visible && cursor_here && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
 
       if(cell.chars[0] == 0) {
-        VTermRect here = {
-          .start_row = row,
-          .end_row   = row + 1,
-          .start_col = col,
-          .end_col   = col + 1,
-        };
-        erase_rect(pt, here);
+        put_erase(pt, cell.width, pos);
       }
       else {
         put_glyph(pt, cell.chars, cell.width, pos);
       }
 
       if(cursor_visible && cursor_here && pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
-        flush_glyphs(pt);
+        flush_pending(pt);
 
         cairo_t *gc = gdk_cairo_create(pt->termdraw);
 
@@ -607,7 +607,7 @@ static gboolean cursor_blink(void *user_data)
   if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
-    flush_glyphs(pt);
+    flush_pending(pt);
   }
 
   return TRUE;
@@ -664,7 +664,7 @@ static void cancel_highlight(PangoTerm *pt)
   pt->highlight_stop.row  = -1;
 
   repaint_flow(pt, old_start, old_stop);
-  flush_glyphs(pt);
+  flush_pending(pt);
 }
 
 /*
@@ -694,7 +694,7 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 {
   PangoTerm *pt = user_data;
 
-  flush_glyphs(pt);
+  flush_pending(pt);
 
   if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
     int start_inside = vterm_rect_contains(src, pt->highlight_start);
@@ -937,7 +937,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     pt->highlight_stop.col  = stop_col;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
-    flush_glyphs(pt);
+    flush_pending(pt);
     store_clipboard(pt);
   }
   else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
@@ -948,7 +948,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     pt->highlight_stop.col  = pt->cols - 1;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
-    flush_glyphs(pt);
+    flush_pending(pt);
     store_clipboard(pt);
   }
 
@@ -1011,7 +1011,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     else
       repaint_flow(pt, old_end, pt->drag_pos);
 
-    flush_glyphs(pt);
+    flush_pending(pt);
   }
 
   return FALSE;
@@ -1107,7 +1107,7 @@ static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer us
   if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
-    flush_glyphs(pt);
+    flush_pending(pt);
   }
 }
 
@@ -1119,7 +1119,7 @@ static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer u
   if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
-    flush_glyphs(pt);
+    flush_pending(pt);
   }
 }
 
@@ -1383,6 +1383,6 @@ void pangoterm_end_update(PangoTerm *pt)
   pt->cursor_hidden_for_redraw = 0;
   repaint_cell(pt, pt->cursorpos);
 
-  flush_glyphs(pt);
+  flush_pending(pt);
   term_flush_output(pt);
 }
