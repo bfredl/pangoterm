@@ -1100,7 +1100,20 @@ static gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer
 {
   PangoTerm *pt = user_data;
 
-  blit_buffer(pt, &event->area);
+  /* GDK always sends resize events before expose events, so it's possible this
+   * expose event is for a region that now doesn't exist.
+   */
+  int right  = pt->cols * pt->cell_width;
+  int bottom = pt->rows * pt->cell_height;
+
+  /* Trim to still-valid area, or ignore if there's nothing remaining */
+  if(event->area.x + event->area.width > right)
+    event->area.width = right - event->area.x;
+  if(event->area.y + event->area.height > bottom)
+    event->area.height = bottom - event->area.y;
+
+  if(event->area.height && event->area.width)
+    blit_buffer(pt, &event->area);
 
   return TRUE;
 }
