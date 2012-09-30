@@ -21,6 +21,40 @@ CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
 # define DEBUG_PRINT_INPUT
 #endif
 
+/* To accomodate scrollback scrolling, we'll adopt the convention that VTermPos
+ * and VTermRect instances always refer to virtual locations within the
+ * VTermScreen buffer (or our scrollback buffer if row is negative), and
+ * PhyPos and PhyRect instances refer to physical onscreen positions
+ */
+
+typedef struct {
+  int prow, pcol;
+} PhyPos;
+
+#define PHYSPOS_FROM_VTERMPOS(pt, pos) \
+  {                                    \
+    .prow = pos.row,                   \
+    .pcol = pos.col,                   \
+  }
+
+#define VTERMPOS_FROM_PHYSPOS(pt, pos) \
+  {                                    \
+    .row = pos.prow,                   \
+    .col = pos.pcol,                   \
+  }
+
+typedef struct {
+  int start_prow, end_prow, start_pcol, end_pcol;
+} PhyRect;
+
+#define PHYRECT_FROM_VTERMRECT(pt, rect) \
+  {                                      \
+    .start_prow = rect.start_row,        \
+    .end_prow   = rect.end_row,          \
+    .start_pcol = rect.start_col,        \
+    .end_pcol   = rect.end_col,          \
+  }
+
 struct PangoTerm {
   VTerm *vt;
   VTermScreen *vts;
@@ -265,20 +299,20 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
   return str;
 }
 
-#define GDKRECTANGLE_FROM_VTERMRECT(pt, rect)                    \
-  {                                                              \
-    .x      = rect.start_col * pt->cell_width,                   \
-    .y      = rect.start_row * pt->cell_height,                  \
-    .width  = (rect.end_col - rect.start_col) * pt->cell_width,  \
-    .height = (rect.end_row - rect.start_row) * pt->cell_height, \
+#define GDKRECTANGLE_FROM_PHYRECT(pt, rect)                        \
+  {                                                                \
+    .x      = rect.start_pcol * pt->cell_width,                    \
+    .y      = rect.start_prow * pt->cell_height,                   \
+    .width  = (rect.end_pcol - rect.start_pcol) * pt->cell_width,  \
+    .height = (rect.end_prow - rect.start_prow) * pt->cell_height, \
   }
 
-#define GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width_mult) \
-  {                                                        \
-    .x      = pos.col * pt->cell_width,                    \
-    .y      = pos.row * pt->cell_height,                   \
-    .width  = pt->cell_width * width_mult,                 \
-    .height = pt->cell_height,                             \
+#define GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, pos, width_mult) \
+  {                                                         \
+    .x      = pos.pcol * pt->cell_width,                    \
+    .y      = pos.prow * pt->cell_height,                   \
+    .width  = pt->cell_width * width_mult,                  \
+    .height = pt->cell_height,                              \
   }
 
 static int is_wordchar(uint32_t c)
@@ -383,7 +417,11 @@ static void flush_pending(PangoTerm *pt)
 
 static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos pos)
 {
-  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width);
+  PhyPos ph_pos = PHYSPOS_FROM_VTERMPOS(pt, pos);
+  if(ph_pos.prow < 0 || ph_pos.prow >= pt->rows)
+    return;
+
+  GdkRectangle destarea = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, width);
 
   if(pt->erase_columns)
     flush_pending(pt);
@@ -407,7 +445,11 @@ static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos
 
 static void put_erase(PangoTerm *pt, int width, VTermPos pos)
 {
-  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, width);
+  PhyPos ph_pos = PHYSPOS_FROM_VTERMPOS(pt, pos);
+  if(ph_pos.prow < 0 || ph_pos.prow >= pt->rows)
+    return;
+
+  GdkRectangle destarea = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, width);
 
   if(!pt->erase_columns)
     flush_pending(pt);
@@ -505,12 +547,12 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
 
 static void repaint_rect(PangoTerm *pt, VTermRect rect)
 {
-  for(int row = rect.start_row; row < rect.end_row; row++) {
-    for(int col = rect.start_col; col < rect.end_col; ) {
-      VTermPos pos = {
-        .row = row,
-        .col = col,
-      };
+  PhyRect ph_rect = PHYRECT_FROM_VTERMRECT(pt, rect);
+  PhyPos ph_pos;
+
+  for(ph_pos.prow = ph_rect.start_prow; ph_pos.prow < ph_rect.end_prow; ph_pos.prow++) {
+    for(ph_pos.pcol = ph_rect.start_pcol; ph_pos.pcol < ph_rect.end_pcol; ) {
+      VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
       VTermScreenCell cell;
       vterm_screen_get_cell(pt->vts, pos, &cell);
@@ -544,18 +586,18 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
 
         cairo_t *gc = gdk_cairo_create(pt->termdraw);
 
-        GdkRectangle destarea = GDKRECTANGLE_FROM_VTERM_CELLS(pt, pos, 1);
-        gdk_cairo_rectangle(gc, &destarea);
+        GdkRectangle cursor_area = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, 1);
+        gdk_cairo_rectangle(gc, &cursor_area);
         cairo_clip(gc);
 
         switch(pt->cursor_shape) {
         case VTERM_PROP_CURSORSHAPE_UNDERLINE:
           gdk_cairo_set_source_color(gc, &pt->cursor_col);
           cairo_rectangle(gc,
-              destarea.x,
-              destarea.y + (int)(destarea.height * 0.85),
-              destarea.width,
-              (int)(destarea.height * 0.15));
+              cursor_area.x,
+              cursor_area.y + (int)(cursor_area.height * 0.85),
+              cursor_area.width,
+              (int)(cursor_area.height * 0.15));
           cairo_fill(gc);
           break;
         }
@@ -563,7 +605,7 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
         cairo_destroy(gc);
       }
 
-      col += cell.width;
+      ph_pos.pcol += cell.width;
     }
   }
 }
@@ -735,7 +777,16 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
     }
   }
 
-  GdkRectangle destarea = GDKRECTANGLE_FROM_VTERMRECT(pt, dest);
+  PhyRect ph_dest = PHYRECT_FROM_VTERMRECT(pt, dest);
+
+  if(ph_dest.end_prow < 0 || ph_dest.start_prow >= pt->rows)
+    return 1;
+  if(ph_dest.start_prow < 0)
+    ph_dest.start_prow = 0;
+  if(ph_dest.end_prow >= pt->rows)
+    ph_dest.end_prow = pt->rows;
+
+  GdkRectangle destarea = GDKRECTANGLE_FROM_PHYRECT(pt, ph_dest);
 
   cairo_surface_flush(pt->buffer);
   cairo_t* gc = cairo_create(pt->buffer);
@@ -901,13 +952,17 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
 {
   PangoTerm *pt = user_data;
 
-  int col = event->x / pt->cell_width;
-  int row = event->y / pt->cell_height;
+  PhyPos ph_pos = {
+    .pcol = event->x / pt->cell_width,
+    .prow = event->y / pt->cell_height,
+  };
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
-  int is_inside = (col >= 0 && col < pt->cols &&
-                   row >= 0 && row < pt->rows);
+  int is_inside = (ph_pos.pcol >= 0 && ph_pos.pcol < pt->cols &&
+                   ph_pos.prow >= 0 && ph_pos.prow < pt->rows);
+
+  VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
@@ -923,7 +978,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     default:
       return TRUE;
     }
-    (*pt->mousefunc)(col, row, event->button, is_press, state, pt->mousedata);
+    (*pt->mousefunc)(pos.col, pos.row, event->button, is_press, state, pt->mousedata);
     term_flush_output(pt);
   }
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
@@ -935,8 +990,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
     cancel_highlight(pt);
 
-    pt->drag_start.row = row;
-    pt->drag_start.col = col;
+    pt->drag_start = pos;
     pt->drag_pos.row = -1;
   }
   else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->drag_pos.row != -1) {
@@ -950,33 +1004,33 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     /* Highlight a word. start with the position, and extend it both sides
      * over word characters
      */
-    int start_col = col;
+    int start_col = pos.col;
     while(start_col > 0) {
-      VTermPos pos = { .row = row, .col = start_col - 1 };
+      VTermPos cellpos = { .row = pos.row, .col = start_col - 1 };
       VTermScreenCell cell;
 
-      vterm_screen_get_cell(pt->vts, pos, &cell);
+      vterm_screen_get_cell(pt->vts, cellpos, &cell);
       if(!is_wordchar(cell.chars[0]))
         break;
 
       start_col--;
     }
 
-    int stop_col = col;
+    int stop_col = pos.col;
     while(stop_col < pt->cols) {
-      VTermPos pos = { .row = row, .col = stop_col + 1 };
+      VTermPos cellpos = { .row = pos.row, .col = stop_col + 1 };
       VTermScreenCell cell;
 
-      vterm_screen_get_cell(pt->vts, pos, &cell);
+      vterm_screen_get_cell(pt->vts, cellpos, &cell);
       if(!is_wordchar(cell.chars[0]))
         break;
 
       stop_col++;
     }
 
-    pt->highlight_start.row = row;
+    pt->highlight_start.row = pos.row;
     pt->highlight_start.col = start_col;
-    pt->highlight_stop.row  = row;
+    pt->highlight_stop.row  = pos.row;
     pt->highlight_stop.col  = stop_col;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
@@ -986,9 +1040,9 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   }
   else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
     /* Highlight an entire line */
-    pt->highlight_start.row = row;
+    pt->highlight_start.row = pos.row;
     pt->highlight_start.col = 0;
-    pt->highlight_stop.row  = row;
+    pt->highlight_stop.row  = pos.row;
     pt->highlight_stop.col  = pt->cols - 1;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
@@ -1004,18 +1058,24 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
 {
   PangoTerm *pt = user_data;
 
-  int col = event->x / pt->cell_width;
-  int row = event->y / pt->cell_height;
+  PhyPos ph_pos = {
+    .pcol = event->x / pt->cell_width,
+    .prow = event->y / pt->cell_height,
+  };
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
-  int is_inside = (col >= 0 && col < pt->cols &&
-                   row >= 0 && row < pt->rows);
+  int is_inside = (ph_pos.pcol >= 0 && ph_pos.pcol < pt->cols &&
+                   ph_pos.prow >= 0 && ph_pos.prow < pt->rows);
+
+  VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
+    if(pos.row < 0 || pos.row >= pt->rows)
+      return TRUE;
     VTermModifier state = convert_modifier(event->state);
-    (*pt->mousefunc)(col, row, 0, 0, state, pt->mousedata);
+    (*pt->mousefunc)(pos.col, pos.row, 0, 0, state, pt->mousedata);
     term_flush_output(pt);
   }
   else if(event->state & GDK_BUTTON1_MASK) {
@@ -1023,17 +1083,16 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     if(old_end.row == -1)
       old_end = pt->drag_start;
 
-    if(row == old_end.row && col == old_end.col)
+    if(pos.row == old_end.row && pos.col == old_end.col)
       /* Unchanged; stop here */
       return FALSE;
 
-    if(col < 0)         col = 0;
-    if(col > pt->cols)  col = pt->cols; /* allow off-by-1 */
-    if(row < 0)         row = 0;
-    if(row >= pt->rows) row = pt->rows - 1;
+    if(pos.col < 0)         pos.col = 0;
+    if(pos.col > pt->cols)  pos.col = pt->cols; /* allow off-by-1 */
+    if(pos.row < 0)         pos.row = 0;
+    if(pos.row >= pt->rows) pos.row = pt->rows - 1;
 
-    pt->drag_pos.row = row;
-    pt->drag_pos.col = col;
+    pt->drag_pos = pos;
 
     VTermPos pos_left1 = pt->drag_pos;
     if(pos_left1.col > 0) pos_left1.col--;
@@ -1067,8 +1126,14 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
 {
   PangoTerm *pt = user_data;
 
-  int col = event->x / pt->cell_width;
-  int row = event->y / pt->cell_height;
+  PhyPos ph_pos = {
+    .pcol = event->x / pt->cell_width,
+    .prow = event->y / pt->cell_height,
+  };
+
+  VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
+  if(pos.row < 0 || pos.row >= pt->rows)
+    return TRUE;
 
   /* Translate scroll direction back into a button number */
   int button;
@@ -1082,7 +1147,7 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
   VTermModifier state = convert_modifier(event->state);
 
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
-    (*pt->mousefunc)(col, row, button, 1, state, pt->mousedata);
+    (*pt->mousefunc)(pos.col, pos.row, button, 1, state, pt->mousedata);
     term_flush_output(pt);
   }
 
