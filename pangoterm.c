@@ -55,6 +55,8 @@ struct PangoTerm {
   int rows;
   int cols;
 
+  int on_altscreen;
+
   PangoTermWriteFn *writefn;
   void *writefn_data;
 
@@ -790,7 +792,7 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     break;
 
   case VTERM_PROP_ALTSCREEN:
-    /* recognised but don't need to do anything here */
+    pt->on_altscreen = val->boolean;
     return 1;
 
   default:
