@@ -406,6 +406,42 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
   /* clip rectangle will solve this efficiently */
   cairo_set_source_surface(gc, pt->buffer, 0, 0);
   cairo_paint(gc);
+
+  if(pt->scroll_offs) {
+    int whole_height = pt->rows * pt->cell_height;
+
+    /* Map the whole pt->rows + pt->scrollback_current extent onto the entire
+     * height of the window, and draw a brighter rectangle to represent the
+     * part currently visible
+     */
+    int pixels_from_bottom = (whole_height * pt->scroll_offs) /
+                             (pt->rows + pt->scroll_current);
+    int pixels_tall = (whole_height * pt->rows) /
+                      (pt->rows + pt->scroll_current);
+
+    cairo_save(gc);
+
+    GdkRectangle rect = {
+      .x = pt->cols * pt->cell_width - 3,
+      .y = 0,
+      .width = 3,
+      .height = whole_height,
+    };
+    gdk_cairo_rectangle(gc, &rect);
+    cairo_clip(gc);
+    cairo_set_source_rgba(gc, 1.0, 1.0, 1.0, 0.3);
+    cairo_paint(gc);
+
+    rect.height = pixels_tall;
+    rect.y = whole_height - pixels_tall - pixels_from_bottom;
+    gdk_cairo_rectangle(gc, &rect);
+    cairo_clip(gc);
+    cairo_set_source_rgba(gc, 1.0, 1.0, 1.0, 0.7);
+    cairo_paint(gc);
+
+    cairo_restore(gc);
+  }
+
   cairo_destroy(gc);
 }
 
