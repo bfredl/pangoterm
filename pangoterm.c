@@ -227,6 +227,35 @@ static void term_push_string(PangoTerm *pt, gchar *str)
   term_flush_output(pt);
 }
 
+static size_t fetch_line_text(PangoTerm *pt, gchar *str, size_t len, VTermRect rect)
+{
+  size_t ret = 0;
+  int end_blank = 0;
+
+  VTermPos pos = {
+    .row = rect.start_row,
+    .col = rect.start_col,
+  };
+  while(pos.col < rect.end_col) {
+    VTermScreenCell cell;
+    vterm_screen_get_cell(pt->vts, pos, &cell);
+    for(int i = 0; cell.chars[i]; i++)
+      ret += g_unichar_to_utf8(cell.chars[i], str ? str + ret : NULL);
+
+    end_blank = !cell.chars[0];
+
+    pos.col += cell.width;
+  }
+
+  if(end_blank) {
+    if(str)
+      str[ret] = 0x0a;
+    ret++;
+  }
+
+  return ret;
+}
+
 static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
 {
   size_t strlen = 0;
@@ -242,7 +271,7 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
       rect.start_col = start.col;
       rect.end_row   = start.row + 1;
       rect.end_col   = stop.col + 1;
-      thislen += vterm_screen_get_text(pt->vts,
+      thislen += fetch_line_text(pt,
           str ? str    + thislen : NULL,
           str ? strlen - thislen : 0,
           rect);
@@ -252,14 +281,10 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
       rect.start_col = start.col;
       rect.end_row   = start.row + 1;
       rect.end_col   = pt->cols;
-      thislen += vterm_screen_get_text(pt->vts,
+      thislen += fetch_line_text(pt,
           str ? str    + thislen : NULL,
           str ? strlen - thislen : 0,
           rect);
-
-      thislen += 1;
-      if(str)
-        str[thislen - 1] = 0x0a;
 
       for(int row = start.row + 1; row < stop.row; row++) {
         rect.start_row = row;
@@ -267,21 +292,17 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
         rect.end_row   = row + 1;
         rect.end_col   = pt->cols;
 
-        thislen += vterm_screen_get_text(pt->vts,
+        thislen += fetch_line_text(pt,
             str ? str    + thislen : NULL,
             str ? strlen - thislen : 0,
             rect);
-
-        thislen += 1;
-        if(str)
-          str[thislen - 1] = 0x0a;
       }
 
       rect.start_row = stop.row;
       rect.start_col = 0;
       rect.end_row   = stop.row + 1;
       rect.end_col   = stop.col + 1;
-      thislen += vterm_screen_get_text(pt->vts,
+      thislen += fetch_line_text(pt,
           str ? str    + thislen : NULL,
           str ? strlen - thislen : 0,
           rect);
