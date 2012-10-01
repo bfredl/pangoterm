@@ -1093,6 +1093,8 @@ static void scroll_delta(PangoTerm *pt, int delta)
   pt->cursor_hidden_for_redraw = 0;
   repaint_cell(pt, pt->cursorpos);
 
+  flush_pending(pt);
+
   GdkRectangle whole_screen = {
     .x = 0,
     .y = 0,
