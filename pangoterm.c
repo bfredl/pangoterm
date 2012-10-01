@@ -124,14 +124,16 @@ struct PangoTerm {
   /* area in buffer that needs flushing to termdraw */
   GdkRectangle dirty_area;
 
-  /* These four positions relate to the click/drag highlight state
-   * row == -1 for invalid */
+  /* These four positions relate to the click/drag highlight state */
 
+  enum { NO_DRAG, DRAG_PENDING, DRAGGING } dragging;
   /* Initial mouse position of selection drag */
   VTermPos drag_start;
   /* Current mouse position of selection drag */
   VTermPos drag_pos;
+
   /* Start and stop bounds of the selection */
+  int highlight;
   VTermPos highlight_start;
   VTermPos highlight_stop;
 
@@ -579,7 +581,7 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
       vterm_screen_get_cell(pt->vts, pos, &cell);
 
       /* Invert the RV attribute if this cell is selected */
-      if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
+      if(pt->highlight) {
         VTermPos start = pt->highlight_start,
                  stop  = pt->highlight_stop;
 
@@ -734,16 +736,12 @@ static void store_clipboard(PangoTerm *pt)
 
 static void cancel_highlight(PangoTerm *pt)
 {
-  VTermPos old_start = pt->highlight_start,
-           old_stop  = pt->highlight_stop;
-
-  if(old_start.row == -1 && old_stop.row == -1)
+  if(!pt->highlight)
     return;
 
-  pt->highlight_start.row = -1;
-  pt->highlight_stop.row  = -1;
+  pt->highlight = 0;
 
-  repaint_flow(pt, old_start, old_stop);
+  repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
   flush_pending(pt);
   blit_dirty(pt);
 }
@@ -756,9 +754,9 @@ static int term_damage(VTermRect rect, void *user_data)
 {
   PangoTerm *pt = user_data;
 
-  if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
-    if((pt->highlight_start.row < rect.end_row-1 ||
-        (pt->highlight_start.row == rect.end_row-1 && pt->highlight_start.col < rect.end_col-1)) &&
+  if(pt->highlight) {
+    if((pt->highlight_start.row < rect.end_row - 1 ||
+        (pt->highlight_start.row == rect.end_row - 1 && pt->highlight_start.col < rect.end_col - 1)) &&
        (pt->highlight_stop.row > rect.start_row ||
         (pt->highlight_stop.row == rect.start_row && pt->highlight_stop.col > rect.start_col))) {
       /* Damage overlaps highlighted region */
@@ -778,7 +776,7 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   flush_pending(pt);
   blit_dirty(pt);
 
-  if(pt->highlight_start.row != -1 && pt->highlight_stop.row != -1) {
+  if(pt->highlight) {
     int start_inside = vterm_rect_contains(src, pt->highlight_start);
     int stop_inside  = vterm_rect_contains(src, pt->highlight_stop);
 
@@ -932,7 +930,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   if((event->keyval == 'c' || event->keyval == 'C') &&
      event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK) {
     /* Ctrl-Shift-C copies to clipboard */
-    if(pt->highlight_start.row == -1)
+    if(!pt->highlight)
       return TRUE;
 
     gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
@@ -1011,13 +1009,12 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
     cancel_highlight(pt);
 
+    pt->dragging = DRAG_PENDING;
     pt->drag_start = pos;
-    pt->drag_pos.row = -1;
   }
-  else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->drag_pos.row != -1) {
+  else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->dragging != NO_DRAG) {
     /* Always accept a release even when outside */
-    pt->drag_start.row = -1;
-    pt->drag_pos.row   = -1;
+    pt->dragging = NO_DRAG;
 
     store_clipboard(pt);
   }
@@ -1049,6 +1046,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
       stop_col++;
     }
 
+    pt->highlight = 1;
     pt->highlight_start.row = pos.row;
     pt->highlight_start.col = start_col;
     pt->highlight_stop.row  = pos.row;
@@ -1061,6 +1059,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   }
   else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
     /* Highlight an entire line */
+    pt->highlight = 1;
     pt->highlight_start.row = pos.row;
     pt->highlight_start.col = 0;
     pt->highlight_stop.row  = pos.row;
@@ -1100,9 +1099,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     term_flush_output(pt);
   }
   else if(event->state & GDK_BUTTON1_MASK) {
-    VTermPos old_end = pt->drag_pos;
-    if(old_end.row == -1)
-      old_end = pt->drag_start;
+    VTermPos old_end = pt->dragging == DRAGGING ? pt->drag_pos : pt->drag_start;
 
     if(pos.row == old_end.row && pos.col == old_end.col)
       /* Unchanged; stop here */
@@ -1113,6 +1110,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     if(pos.row < 0)         pos.row = 0;
     if(pos.row >= pt->rows) pos.row = pt->rows - 1;
 
+    pt->dragging = DRAGGING;
     pt->drag_pos = pos;
 
     VTermPos pos_left1 = pt->drag_pos;
@@ -1121,6 +1119,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     if(vterm_screen_is_eol(pt->vts, pos_left1))
       pt->drag_pos.col = pt->cols;
 
+    pt->highlight = 1;
     if(vterm_pos_cmp(pt->drag_start, pt->drag_pos) > 0) {
       pt->highlight_start = pt->drag_pos;
       pt->highlight_stop  = pt->drag_start;
@@ -1377,10 +1376,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
 
-  pt->drag_start.row      = -1;
-  pt->drag_pos.row        = -1;
-  pt->highlight_start.row = -1;
-  pt->highlight_stop.row  = -1;
+  pt->dragging = NO_DRAG;
 
   pt->selection_primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
   pt->selection_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
