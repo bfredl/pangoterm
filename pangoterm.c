@@ -1,5 +1,6 @@
 #include "pangoterm.h"
 
+#include <string.h>  // memmove
 #include <wctype.h>
 
 #include <cairo/cairo.h>
@@ -17,6 +18,8 @@ CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
 CONF_BOOL(bold_highbright, 0, TRUE, "Bold is high-brightness");
 CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
 
+CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -33,13 +36,13 @@ typedef struct {
 
 #define PHYSPOS_FROM_VTERMPOS(pt, pos) \
   {                                    \
-    .prow = pos.row,                   \
+    .prow = pos.row + pt->scroll_offs, \
     .pcol = pos.col,                   \
   }
 
 #define VTERMPOS_FROM_PHYSPOS(pt, pos) \
   {                                    \
-    .row = pos.prow,                   \
+    .row = pos.prow - pt->scroll_offs, \
     .col = pos.pcol,                   \
   }
 
@@ -47,13 +50,18 @@ typedef struct {
   int start_prow, end_prow, start_pcol, end_pcol;
 } PhyRect;
 
-#define PHYRECT_FROM_VTERMRECT(pt, rect) \
-  {                                      \
-    .start_prow = rect.start_row,        \
-    .end_prow   = rect.end_row,          \
-    .start_pcol = rect.start_col,        \
-    .end_pcol   = rect.end_col,          \
+#define PHYRECT_FROM_VTERMRECT(pt, rect)            \
+  {                                                 \
+    .start_prow = rect.start_row + pt->scroll_offs, \
+    .end_prow   = rect.end_row   + pt->scroll_offs, \
+    .start_pcol = rect.start_col,                   \
+    .end_pcol   = rect.end_col,                     \
   }
+
+typedef struct {
+  int cols;
+  VTermScreenCell cells[];
+} PangoTermScrollbackLine;
 
 struct PangoTerm {
   VTerm *vt;
@@ -90,6 +98,11 @@ struct PangoTerm {
   int cols;
 
   int on_altscreen;
+  int scroll_offs;
+
+  int scroll_size;
+  int scroll_current;
+  PangoTermScrollbackLine **sb_buffer;
 
   PangoTermWriteFn *writefn;
   void *writefn_data;
@@ -229,6 +242,42 @@ static void term_push_string(PangoTerm *pt, gchar *str)
   term_flush_output(pt);
 }
 
+static void fetch_cell(PangoTerm *pt, VTermPos pos, VTermScreenCell *cell)
+{
+  if(pos.row < 0) {
+    if(-pos.row > pt->scroll_current) {
+      fprintf(stderr, "ARGH! Attempt to fetch scrollback beyond buffer at line %d\n", -pos.row);
+      abort();
+    }
+
+    /* pos.row == -1 => sb_buffer[0], -2 => [1], etc... */
+    PangoTermScrollbackLine *sb_line = pt->sb_buffer[-pos.row-1];
+    if(pos.col < sb_line->cols)
+      *cell = sb_line->cells[pos.col];
+    else {
+      *cell = (VTermScreenCell) { { 0 } };
+      cell->width = 1;
+    }
+  }
+  else {
+    vterm_screen_get_cell(pt->vts, pos, cell);
+  }
+}
+
+static int fetch_is_eol(PangoTerm *pt, VTermPos pos)
+{
+  if(pos.row >= 0)
+    return vterm_screen_is_eol(pt->vts, pos);
+
+  PangoTermScrollbackLine *sb_line = pt->sb_buffer[-pos.row-1];
+  for(int col = pos.col; col < sb_line->cols; ) {
+    if(sb_line->cells[col].chars[0])
+      return 0;
+    col += sb_line->cells[col].width;
+  }
+  return 1;
+}
+
 static size_t fetch_line_text(PangoTerm *pt, gchar *str, size_t len, VTermRect rect)
 {
   size_t ret = 0;
@@ -240,7 +289,7 @@ static size_t fetch_line_text(PangoTerm *pt, gchar *str, size_t len, VTermRect r
   };
   while(pos.col < rect.end_col) {
     VTermScreenCell cell;
-    vterm_screen_get_cell(pt->vts, pos, &cell);
+    fetch_cell(pt, pos, &cell);
     for(int i = 0; cell.chars[i]; i++)
       ret += g_unichar_to_utf8(cell.chars[i], str ? str + ret : NULL);
 
@@ -568,9 +617,8 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
   }
 }
 
-static void repaint_rect(PangoTerm *pt, VTermRect rect)
+static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
 {
-  PhyRect ph_rect = PHYRECT_FROM_VTERMRECT(pt, rect);
   PhyPos ph_pos;
 
   for(ph_pos.prow = ph_rect.start_prow; ph_pos.prow < ph_rect.end_prow; ph_pos.prow++) {
@@ -578,7 +626,7 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
       VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
       VTermScreenCell cell;
-      vterm_screen_get_cell(pt->vts, pos, &cell);
+      fetch_cell(pt, pos, &cell);
 
       /* Invert the RV attribute if this cell is selected */
       if(pt->highlight) {
@@ -631,6 +679,12 @@ static void repaint_rect(PangoTerm *pt, VTermRect rect)
       ph_pos.pcol += cell.width;
     }
   }
+}
+
+static void repaint_rect(PangoTerm *pt, VTermRect rect)
+{
+  PhyRect ph_rect = PHYRECT_FROM_VTERMRECT(pt, rect);
+  repaint_phyrect(pt, ph_rect);
 }
 
 static void repaint_cell(PangoTerm *pt, VTermPos pos)
@@ -769,6 +823,46 @@ static int term_damage(VTermRect rect, void *user_data)
   return 1;
 }
 
+static int term_prescroll(VTermRect rect, void *user_data)
+{
+  PangoTerm *pt = user_data;
+
+  if(rect.start_row != 0 || rect.start_col != 0 || rect.end_col != pt->cols || pt->on_altscreen)
+    return 0;
+
+  for(int row = 0; row < rect.end_row; row++) {
+    PangoTermScrollbackLine *linebuffer = NULL;
+    if(pt->scroll_current == pt->scroll_size) {
+      /* Recycle old row if it's the right size */
+      if(pt->sb_buffer[pt->scroll_current-1]->cols == pt->cols)
+        linebuffer = pt->sb_buffer[pt->scroll_current-1];
+      else
+        free(pt->sb_buffer[pt->scroll_current-1]);
+
+      memmove(pt->sb_buffer + 1, pt->sb_buffer, sizeof(pt->sb_buffer[0]) * (pt->scroll_current - 1));
+    }
+    else if(pt->scroll_current > 0) {
+      memmove(pt->sb_buffer + 1, pt->sb_buffer, sizeof(pt->sb_buffer[0]) * pt->scroll_current);
+    }
+
+    if(!linebuffer) {
+      linebuffer = g_malloc0(sizeof(PangoTermScrollbackLine) + pt->cols * sizeof(linebuffer->cells[0]));
+      linebuffer->cols = pt->cols;
+    }
+
+    pt->sb_buffer[0] = linebuffer;
+
+    if(pt->scroll_current < pt->scroll_size)
+      pt->scroll_current++;
+
+    for(VTermPos pos = { .row = row, .col = 0 }; pos.col < pt->cols; pos.col++) {
+      vterm_screen_get_cell(pt->vts, pos, linebuffer->cells + pos.col);
+    }
+  }
+
+  return 1;
+}
+
 static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 {
   PangoTerm *pt = user_data;
@@ -892,12 +986,85 @@ static int term_bell(void *user_data)
 
 static VTermScreenCallbacks cb = {
   .damage       = term_damage,
+  .prescroll    = term_prescroll,
   .moverect     = term_moverect,
   .movecursor   = term_movecursor,
   .settermprop  = term_settermprop,
   .setmousefunc = term_setmousefunc,
   .bell         = term_bell,
 };
+
+static void scroll_delta(PangoTerm *pt, int delta)
+{
+  if(pt->on_altscreen)
+    return;
+
+  if(delta > 0) {
+    if(pt->scroll_offs + delta > pt->scroll_current)
+      delta = pt->scroll_current - pt->scroll_offs;
+  }
+  else if(delta < 0) {
+    if(delta < -pt->scroll_offs)
+      delta = -pt->scroll_offs;
+  }
+
+  if(!delta)
+    return;
+
+  pt->scroll_offs += delta;
+
+  pt->cursor_hidden_for_redraw = 1;
+  repaint_cell(pt, pt->cursorpos);
+
+  PhyRect ph_repaint = {
+      .start_pcol = 0,
+      .end_pcol   = pt->cols,
+      .start_prow = 0,
+      .end_prow   = pt->rows,
+  };
+
+  if(abs(delta) < pt->rows) {
+    PhyRect ph_dest = {
+      .start_pcol = 0,
+      .end_pcol   = pt->cols,
+      .start_prow = 0,
+      .end_prow   = pt->rows,
+    };
+
+    if(delta > 0) {
+      ph_dest.start_prow  = delta;
+      ph_repaint.end_prow = delta;
+    }
+    else {
+      ph_dest.end_prow      = pt->rows + delta;
+      ph_repaint.start_prow = pt->rows + delta;
+    }
+
+    GdkRectangle destarea = GDKRECTANGLE_FROM_PHYRECT(pt, ph_dest);
+
+    cairo_surface_flush(pt->buffer);
+    cairo_t *gc = cairo_create(pt->buffer);
+    gdk_cairo_rectangle(gc, &destarea);
+    cairo_clip(gc);
+    cairo_set_source_surface(gc, pt->buffer, 0, delta * pt->cell_height);
+    cairo_paint(gc);
+
+    cairo_destroy(gc);
+  }
+
+  repaint_phyrect(pt, ph_repaint);
+
+  pt->cursor_hidden_for_redraw = 0;
+  repaint_cell(pt, pt->cursorpos);
+
+  GdkRectangle whole_screen = {
+    .x = 0,
+    .y = 0,
+    .width  = pt->cols * pt->cell_width,
+    .height = pt->rows * pt->cell_height,
+  };
+  blit_buffer(pt, &whole_screen);
+}
 
 /*
  * GTK widget event handlers
@@ -939,6 +1106,14 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     gtk_clipboard_set_text(pt->selection_clipboard, text, -1);
 
     free(text);
+    return TRUE;
+  }
+  if(event->keyval == GDK_KEY_Page_Down && event->state & GDK_SHIFT_MASK) {
+    scroll_delta(pt, -pt->rows / 2);
+    return TRUE;
+  }
+  if(event->keyval == GDK_KEY_Page_Up && event->state & GDK_SHIFT_MASK) {
+    scroll_delta(pt, +pt->rows / 2);
     return TRUE;
   }
 
@@ -1027,7 +1202,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
       VTermPos cellpos = { .row = pos.row, .col = start_col - 1 };
       VTermScreenCell cell;
 
-      vterm_screen_get_cell(pt->vts, cellpos, &cell);
+      fetch_cell(pt, cellpos, &cell);
       if(!is_wordchar(cell.chars[0]))
         break;
 
@@ -1039,7 +1214,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
       VTermPos cellpos = { .row = pos.row, .col = stop_col + 1 };
       VTermScreenCell cell;
 
-      vterm_screen_get_cell(pt->vts, cellpos, &cell);
+      fetch_cell(pt, cellpos, &cell);
       if(!is_wordchar(cell.chars[0]))
         break;
 
@@ -1088,6 +1263,11 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
   int is_inside = (ph_pos.pcol >= 0 && ph_pos.pcol < pt->cols &&
                    ph_pos.prow >= 0 && ph_pos.prow < pt->rows);
 
+  if(ph_pos.pcol < 0)         ph_pos.pcol = 0;
+  if(ph_pos.pcol > pt->cols)  ph_pos.pcol = pt->cols; /* allow off-by-1 */
+  if(ph_pos.prow < 0)         ph_pos.prow = 0;
+  if(ph_pos.prow >= pt->rows) ph_pos.prow = pt->rows - 1;
+
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
@@ -1105,18 +1285,13 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
       /* Unchanged; stop here */
       return FALSE;
 
-    if(pos.col < 0)         pos.col = 0;
-    if(pos.col > pt->cols)  pos.col = pt->cols; /* allow off-by-1 */
-    if(pos.row < 0)         pos.row = 0;
-    if(pos.row >= pt->rows) pos.row = pt->rows - 1;
-
     pt->dragging = DRAGGING;
     pt->drag_pos = pos;
 
     VTermPos pos_left1 = pt->drag_pos;
     if(pos_left1.col > 0) pos_left1.col--;
 
-    if(vterm_screen_is_eol(pt->vts, pos_left1))
+    if(fetch_is_eol(pt, pos_left1))
       pt->drag_pos.col = pt->cols;
 
     pt->highlight = 1;
@@ -1155,20 +1330,27 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
   if(pos.row < 0 || pos.row >= pt->rows)
     return TRUE;
 
-  /* Translate scroll direction back into a button number */
-  int button;
-  switch(event->direction) {
-    case GDK_SCROLL_UP:    button = 4; break;
-    case GDK_SCROLL_DOWN:  button = 5; break;
-    default:
-      return FALSE;
-  }
-
-  VTermModifier state = convert_modifier(event->state);
-
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    /* Translate scroll direction back into a button number */
+
+    int button;
+    switch(event->direction) {
+      case GDK_SCROLL_UP:    button = 4; break;
+      case GDK_SCROLL_DOWN:  button = 5; break;
+      default:
+                             return FALSE;
+    }
+    VTermModifier state = convert_modifier(event->state);
+
     (*pt->mousefunc)(pos.col, pos.row, button, 1, state, pt->mousedata);
     term_flush_output(pt);
+  }
+  else {
+    switch(event->direction) {
+      case GDK_SCROLL_UP:   scroll_delta(pt, +3); break;
+      case GDK_SCROLL_DOWN: scroll_delta(pt, -3); break;
+      default:              return FALSE;
+    }
   }
 
   return FALSE;
@@ -1380,6 +1562,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   pt->selection_primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
   pt->selection_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+
+  pt->scroll_size = CONF_scrollback_size;
+  pt->sb_buffer = g_new0(PangoTermScrollbackLine*, pt->scroll_size);
 
   return pt;
 }
