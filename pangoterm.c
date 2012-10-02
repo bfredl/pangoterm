@@ -1364,11 +1364,11 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
     .prow = event->y / pt->cell_height,
   };
 
-  VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
-  if(pos.row < 0 || pos.row >= pt->rows)
-    return TRUE;
-
   if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+    VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
+    if(pos.row < 0 || pos.row >= pt->rows)
+      return TRUE;
+
     /* Translate scroll direction back into a button number */
 
     int button;
