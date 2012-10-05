@@ -20,6 +20,8 @@ CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
 
 CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
+CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -117,6 +119,8 @@ struct PangoTerm {
   int cell_width_pango;
   int cell_width;
   int cell_height;
+
+  GdkColor fg_col;
 
   int has_focus;
   int cursor_visible;    /* VTERM_PROP_CURSORVISIBLE */
@@ -422,21 +426,29 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
     cairo_save(gc);
 
     GdkRectangle rect = {
-      .x = pt->cols * pt->cell_width - 3,
+      .x = pt->cols * pt->cell_width - CONF_scrollbar_width,
       .y = 0,
-      .width = 3,
+      .width = CONF_scrollbar_width,
       .height = whole_height,
     };
     gdk_cairo_rectangle(gc, &rect);
     cairo_clip(gc);
-    cairo_set_source_rgba(gc, 1.0, 1.0, 1.0, 0.3);
+    cairo_set_source_rgba(gc,
+        pt->fg_col.red   / 65535.0,
+        pt->fg_col.green / 65535.0,
+        pt->fg_col.blue  / 65535.0,
+        0.3);
     cairo_paint(gc);
 
     rect.height = pixels_tall;
     rect.y = whole_height - pixels_tall - pixels_from_bottom;
     gdk_cairo_rectangle(gc, &rect);
     cairo_clip(gc);
-    cairo_set_source_rgba(gc, 1.0, 1.0, 1.0, 0.7);
+    cairo_set_source_rgba(gc,
+        pt->fg_col.red   / 65535.0,
+        pt->fg_col.green / 65535.0,
+        pt->fg_col.blue  / 65535.0,
+        0.7);
     cairo_paint(gc);
 
     cairo_restore(gc);
@@ -1616,6 +1628,8 @@ void pangoterm_free(PangoTerm *pt)
 
 void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col)
 {
+  pt->fg_col = *fg_col;
+
   VTermColor fg;
   fg.red   = fg_col->red   / 257;
   fg.green = fg_col->green / 257;
