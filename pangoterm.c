@@ -261,6 +261,7 @@ static void fetch_cell(PangoTerm *pt, VTermPos pos, VTermScreenCell *cell)
     else {
       *cell = (VTermScreenCell) { { 0 } };
       cell->width = 1;
+      cell->bg = sb_line->cells[sb_line->cols - 1].bg;
     }
   }
   else {
