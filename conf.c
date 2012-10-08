@@ -10,6 +10,7 @@
 #include <gtk/gtk.h>
 
 ConfigEntry *configs = NULL;
+static char *profile = NULL;
 
 enum {
   SYMBOL_TRUE = G_TOKEN_LAST + 1,
@@ -27,6 +28,9 @@ static int conf_from_file(const char *path)
   GScanner *scanner = g_scanner_new(NULL);
   /* Don't skip linefeeds */
   scanner->config->cset_skip_characters = " \t";
+  /* Identifier needs to include * and - */
+  scanner->config->cset_identifier_first = G_CSET_A_2_Z G_CSET_a_2_z "_*";
+  scanner->config->cset_identifier_nth   = G_CSET_A_2_Z G_CSET_a_2_z "_-*";
 
   g_scanner_scope_add_symbol(scanner, 0, "true",  GINT_TO_POINTER(SYMBOL_TRUE));
   g_scanner_scope_add_symbol(scanner, 0, "false", GINT_TO_POINTER(SYMBOL_FALSE));
@@ -36,12 +40,21 @@ static int conf_from_file(const char *path)
   scanner->input_name = g_strdup(path);
   g_scanner_input_file(scanner, fd);
 
+  int matching_profile = 1;
+
   GTokenType t;
   while((t = g_scanner_get_next_token(scanner)) != G_TOKEN_EOF) {
     if(t == '\n') // Skip linefeeds here
       continue;
 
     if(t == G_TOKEN_IDENTIFIER) {
+      if(!matching_profile) {
+        // Skip tokens until linefeed
+        while(g_scanner_get_next_token(scanner) != '\n')
+          ;
+        continue;
+      }
+
       char *name = scanner->value.v_identifier;
 
       ConfigEntry *cfg = NULL;
@@ -115,6 +128,31 @@ static int conf_from_file(const char *path)
         goto abort;
       }
     }
+    else if(t == '[') {
+      t = g_scanner_get_next_token(scanner);
+      if(t != G_TOKEN_IDENTIFIER ||
+         strcmp(scanner->value.v_identifier, "Profile")) {
+        g_scanner_error(scanner, "Expected 'Profile'");
+        goto abort;
+      }
+
+      if(g_scanner_get_next_token(scanner) != G_TOKEN_IDENTIFIER) {
+        g_scanner_error(scanner, "Expected profile name");
+        goto abort;
+      }
+
+      matching_profile = profile && g_pattern_match_simple(scanner->value.v_identifier, profile);
+
+      if(g_scanner_get_next_token(scanner) != ']') {
+        g_scanner_error(scanner, "Expected ']'");
+        goto abort;
+      }
+
+      if(g_scanner_get_next_token(scanner) != '\n') {
+        g_scanner_error(scanner, "Expected EOL");
+        goto abort;
+      }
+    }
     else {
       g_scanner_error(scanner, "Expected a setting name");
       goto abort;
@@ -139,7 +177,7 @@ int conf_parse(int *argcp, char ***argvp)
   for(ConfigEntry *p = configs; p; p = p->next)
     n_entries += (p->type == CONF_TYPE_BOOL) ? 2 : 1;
 
-  GOptionEntry *option_entries = malloc(sizeof(GOptionEntry) * (n_entries + 2));
+  GOptionEntry *option_entries = malloc(sizeof(GOptionEntry) * (n_entries + 3));
 
   char *config_file = NULL;
   option_entries[0].long_name  = "config-file";
@@ -150,7 +188,15 @@ int conf_parse(int *argcp, char ***argvp)
   option_entries[0].description     = "Path to config file";
   option_entries[0].arg_description = "PATH";
 
-  int i = 1;
+  option_entries[1].long_name  = "profile";
+  option_entries[1].short_name = 'p';
+  option_entries[1].flags      = 0;
+  option_entries[1].arg        = G_OPTION_ARG_STRING;
+  option_entries[1].arg_data   = &profile;
+  option_entries[1].description     = "Profile name";
+  option_entries[1].arg_description = "PROFILE";
+
+  int i = 2;
   for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next, i++) {
     char *longname = g_strdup(cfg->longname);
 
@@ -203,7 +249,7 @@ int conf_parse(int *argcp, char ***argvp)
     return 0;
   }
 
-  for(i = 1; i < n_entries + 1; i++)
+  for(i = 2; i < n_entries + 1; i++)
     g_free((void*)option_entries[i].long_name);
   free(option_entries);
 
