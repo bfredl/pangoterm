@@ -25,6 +25,8 @@ static int conf_from_file(const char *path)
   }
 
   GScanner *scanner = g_scanner_new(NULL);
+  /* Don't skip linefeeds */
+  scanner->config->cset_skip_characters = " \t";
 
   g_scanner_scope_add_symbol(scanner, 0, "true",  GINT_TO_POINTER(SYMBOL_TRUE));
   g_scanner_scope_add_symbol(scanner, 0, "false", GINT_TO_POINTER(SYMBOL_FALSE));
@@ -36,6 +38,9 @@ static int conf_from_file(const char *path)
 
   GTokenType t;
   while((t = g_scanner_get_next_token(scanner)) != G_TOKEN_EOF) {
+    if(t == '\n') // Skip linefeeds here
+      continue;
+
     if(t == G_TOKEN_IDENTIFIER) {
       char *name = scanner->value.v_identifier;
 
@@ -103,6 +108,11 @@ static int conf_from_file(const char *path)
             cfg->var_set = TRUE;
           }
           break;
+      }
+
+      if(g_scanner_get_next_token(scanner) != '\n') {
+        g_scanner_error(scanner, "Expected EOL");
+        goto abort;
       }
     }
     else {
