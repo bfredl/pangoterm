@@ -1197,6 +1197,9 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   else if(event->keyval < 0x0f00)
     /* event->keyval already contains a Unicode codepoint so that's easy */
     vterm_input_push_char(pt->vt, state, event->keyval);
+  else if(event->keyval >= GDK_KEY_KP_0 && event->keyval <= GDK_KEY_KP_9)
+    /* event->keyval is a keypad number; just treat it as Unicode */
+    vterm_input_push_char(pt->vt, state, event->keyval - GDK_KEY_KP_0 + '0');
   else
     return FALSE;
 
