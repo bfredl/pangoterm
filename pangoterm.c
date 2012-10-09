@@ -171,32 +171,44 @@ static VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
   case GDK_KEY_BackSpace:
     return VTERM_KEY_BACKSPACE;
   case GDK_KEY_Tab:
+  case GDK_KEY_KP_Tab:
     return VTERM_KEY_TAB;
   case GDK_KEY_Return:
+  case GDK_KEY_KP_Enter:
     return VTERM_KEY_ENTER;
   case GDK_KEY_Escape:
     return VTERM_KEY_ESCAPE;
 
   case GDK_KEY_Up:
+  case GDK_KEY_KP_Up:
     return VTERM_KEY_UP;
   case GDK_KEY_Down:
+  case GDK_KEY_KP_Down:
     return VTERM_KEY_DOWN;
   case GDK_KEY_Left:
+  case GDK_KEY_KP_Left:
     return VTERM_KEY_LEFT;
   case GDK_KEY_Right:
+  case GDK_KEY_KP_Right:
     return VTERM_KEY_RIGHT;
 
   case GDK_KEY_Insert:
+  case GDK_KEY_KP_Insert:
     return VTERM_KEY_INS;
   case GDK_KEY_Delete:
+  case GDK_KEY_KP_Delete:
     return VTERM_KEY_DEL;
   case GDK_KEY_Home:
+  case GDK_KEY_KP_Home:
     return VTERM_KEY_HOME;
   case GDK_KEY_End:
+  case GDK_KEY_KP_End:
     return VTERM_KEY_END;
   case GDK_KEY_Page_Up:
+  case GDK_KEY_KP_Page_Up:
     return VTERM_KEY_PAGEUP;
   case GDK_KEY_Page_Down:
+  case GDK_KEY_KP_Page_Down:
     return VTERM_KEY_PAGEDOWN;
 
   case GDK_KEY_ISO_Left_Tab:
