@@ -22,6 +22,7 @@ CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
 CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
 
+CONF_BOOL(unscroll_on_output, 0, TRUE, "Scroll to bottom on output");
 CONF_BOOL(unscroll_on_key,    0, TRUE, "Scroll to bottom on keypress");
 
 #ifdef DEBUG
@@ -1770,6 +1771,9 @@ void pangoterm_start(PangoTerm *pt)
 
 void pangoterm_push_bytes(PangoTerm *pt, const char *bytes, size_t len)
 {
+  if(CONF_unscroll_on_output && pt->scroll_offs)
+    scroll_delta(pt, -pt->scroll_offs);
+
   vterm_push_bytes(pt->vt, bytes, len);
 }
 
