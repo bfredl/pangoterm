@@ -22,6 +22,8 @@ CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
 CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
 
+CONF_BOOL(unscroll_on_key,    0, TRUE, "Scroll to bottom on keypress");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -1203,6 +1205,9 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   else
     return FALSE;
 
+  if(CONF_unscroll_on_key && pt->scroll_offs)
+    scroll_delta(pt, -pt->scroll_offs);
+
   term_flush_output(pt);
 
   return FALSE;
@@ -1427,6 +1432,9 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
   PangoTerm *pt = user_data;
 
   term_push_string(pt, str);
+
+  if(CONF_unscroll_on_key && pt->scroll_offs)
+    scroll_delta(pt, -pt->scroll_offs);
 
   return FALSE;
 }
