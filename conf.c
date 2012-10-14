@@ -177,7 +177,7 @@ int conf_parse(int *argcp, char ***argvp)
   for(ConfigEntry *p = configs; p; p = p->next)
     n_entries += (p->type == CONF_TYPE_BOOL) ? 2 : 1;
 
-  GOptionEntry *option_entries = malloc(sizeof(GOptionEntry) * (n_entries + 3));
+  GOptionEntry *option_entries = g_malloc0(sizeof(GOptionEntry) * (n_entries + 3));
 
   char *config_file = NULL;
   option_entries[0].long_name  = "config-file";
