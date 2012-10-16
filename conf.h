@@ -27,6 +27,13 @@ struct ConfigEntry {
     char *s;
     int i;
     double d;
+  } from_file;
+  int var_set_from_file;
+
+  union {
+    char *s;
+    int i;
+    double d;
   } dflt;
 };
 

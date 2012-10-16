@@ -82,20 +82,18 @@ static int conf_from_file(const char *path)
             g_scanner_error(scanner, "Expected \"%s\" to take a string value", cfg->longname);
             goto abort;
           }
-          if(!cfg->var_set) {
-            *(char**)cfg->var = g_strdup(scanner->value.v_string);
-            cfg->var_set = TRUE;
-          }
+          if(cfg->from_file.s)
+            g_free(cfg->from_file.s);
+          cfg->from_file.s = g_strdup(scanner->value.v_string);
+          cfg->var_set_from_file = TRUE;
           break;
         case CONF_TYPE_INT:
           if(t != G_TOKEN_INT) {
             g_scanner_error(scanner, "Expected \"%s\" to take an integer value", cfg->longname);
             goto abort;
           }
-          if(!cfg->var_set) {
-            *(int*)cfg->var = scanner->value.v_int;
-            cfg->var_set = TRUE;
-          }
+          cfg->from_file.i = scanner->value.v_int;
+          cfg->var_set_from_file = TRUE;
           break;
         case CONF_TYPE_DOUBLE:
           if(t == G_TOKEN_INT) {
@@ -106,20 +104,16 @@ static int conf_from_file(const char *path)
             g_scanner_error(scanner, "Expected \"%s\" to take a float value", cfg->longname);
             goto abort;
           }
-          if(!cfg->var_set) {
-            *(double*)cfg->var = scanner->value.v_float;
-            cfg->var_set = TRUE;
-          }
+          cfg->from_file.d = scanner->value.v_float;
+          cfg->var_set_from_file = TRUE;
           break;
         case CONF_TYPE_BOOL:
           if(t != (GTokenType)SYMBOL_TRUE && t != (GTokenType)SYMBOL_FALSE) {
             g_scanner_error(scanner, "Expected \"%s\" to take a boolean value", cfg->longname);
             goto abort;
           }
-          if(!cfg->var_set) {
-            *(int*)cfg->var = (t == (GTokenType)SYMBOL_TRUE);
-            cfg->var_set = TRUE;
-          }
+          cfg->from_file.i = (t == (GTokenType)SYMBOL_TRUE);
+          cfg->var_set_from_file = TRUE;
           break;
       }
 
@@ -161,6 +155,25 @@ static int conf_from_file(const char *path)
 
   g_scanner_destroy(scanner);
   close(fd);
+
+  /* Config parse successful - copy to vars */
+
+  for(ConfigEntry *p = configs; p; p = p->next) {
+    if(p->var_set || !p->var_set_from_file)
+      continue;
+
+    switch(p->type) {
+      case CONF_TYPE_STRING:
+        *(char**)p->var = p->from_file.s; break;
+      case CONF_TYPE_INT:
+        *(int*)p->var = p->from_file.i; break;
+      case CONF_TYPE_DOUBLE:
+        *(double*)p->var = p->from_file.d; break;
+      case CONF_TYPE_BOOL:
+        *(int*)p->var = p->from_file.i; break;
+    }
+    p->var_set = TRUE;
+  }
 
   return 1;
 
