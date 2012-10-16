@@ -25,6 +25,8 @@ CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
 CONF_BOOL(unscroll_on_output, 0, TRUE, "Scroll to bottom on output");
 CONF_BOOL(unscroll_on_key,    0, TRUE, "Scroll to bottom on keypress");
 
+CONF_BOOL(doubleclick_fullword, 0, FALSE, "Double-click selects fullwords (until whitespace)");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -409,7 +411,10 @@ static gchar *fetch_flow_text(PangoTerm *pt, VTermPos start, VTermPos stop)
 
 static int is_wordchar(uint32_t c)
 {
-  return iswalnum(c) || (c == '_');
+  if(CONF_doubleclick_fullword)
+    return c && !iswspace(c);
+  else
+    return iswalnum(c) || (c == '_');
 }
 
 /*
