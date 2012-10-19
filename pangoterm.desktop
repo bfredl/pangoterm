@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Terminal=false
+Exec=pangoterm
+Icon=utilities-terminal
+Type=Application
+Categories=System;TerminalEmulator;
+Name=PangoTerm
+Comment=A minimalist GTK terminal
