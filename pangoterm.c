@@ -10,6 +10,7 @@
 #include "conf.h"
 
 CONF_STRING(cursor, 0, "white", "Cursor colour", "COL");
+CONF_INT(cursor_shape, 0, 1, "Cursor shape (1=block 2=underbar)", "SHAPE");
 
 CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
 
@@ -1595,7 +1596,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
   vterm_parser_set_utf8(pt->vt, 1);
 
   /* Set up state */
-  vterm_state_set_bold_highbright(vterm_obtain_state(pt->vt), CONF_bold_highbright);
+  VTermState *state = vterm_obtain_state(pt->vt);
+  vterm_state_set_bold_highbright(state, CONF_bold_highbright);
 
   /* Set up screen */
   pt->vts = vterm_obtain_screen(pt->vt);
@@ -1770,6 +1772,9 @@ void pangoterm_start(PangoTerm *pt)
   gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
 
   vterm_screen_reset(pt->vts, 1);
+
+  VTermState *state = vterm_obtain_state(pt->vt);
+  vterm_state_set_termprop(state, VTERM_PROP_CURSORSHAPE, &(VTermValue){ .number = CONF_cursor_shape });
 
   gtk_widget_show_all(pt->termwin);
 }
