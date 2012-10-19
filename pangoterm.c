@@ -725,7 +725,7 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
       if(cursor_visible && cursor_here && pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
         flush_pending(pt);
 
-        cairo_t *gc = gdk_cairo_create(pt->termdraw);
+        cairo_t *gc = cairo_create(pt->buffer);
 
         GdkRectangle cursor_area = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, 1);
         gdk_cairo_rectangle(gc, &cursor_area);
