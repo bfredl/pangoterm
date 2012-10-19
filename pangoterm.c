@@ -264,6 +264,24 @@ static void term_push_string(PangoTerm *pt, gchar *str)
   term_flush_output(pt);
 }
 
+static void pos_next(PangoTerm *pt, VTermPos *pos)
+{
+  pos->col++;
+  if(pos->col >= pt->cols) {
+    pos->row++;
+    pos->col = 0;
+  }
+}
+
+static void pos_prev(PangoTerm *pt, VTermPos *pos)
+{
+  pos->col--;
+  if(pos->col < 0) {
+    pos->row--;
+    pos->col = pt->cols - 1;
+  }
+}
+
 static void fetch_cell(PangoTerm *pt, VTermPos pos, VTermScreenCell *cell)
 {
   if(pos.row < 0) {
@@ -1275,35 +1293,35 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     /* Highlight a word. start with the position, and extend it both sides
      * over word characters
      */
-    int start_col = pos.col;
-    while(start_col > 0) {
-      VTermPos cellpos = { .row = pos.row, .col = start_col - 1 };
+    VTermPos start_pos = pos;
+    while(start_pos.col > 0 || start_pos.row > 0) {
+      VTermPos cellpos = start_pos;
       VTermScreenCell cell;
 
+      pos_prev(pt, &cellpos);
       fetch_cell(pt, cellpos, &cell);
       if(!is_wordchar(cell.chars[0]))
         break;
 
-      start_col--;
+      start_pos = cellpos;
     }
 
-    int stop_col = pos.col;
-    while(stop_col < pt->cols) {
-      VTermPos cellpos = { .row = pos.row, .col = stop_col + 1 };
+    VTermPos stop_pos = pos;
+    while(stop_pos.col < pt->cols - 1 || stop_pos.row < pt->rows - 1) {
+      VTermPos cellpos = stop_pos;
       VTermScreenCell cell;
 
+      pos_next(pt, &cellpos);
       fetch_cell(pt, cellpos, &cell);
       if(!is_wordchar(cell.chars[0]))
         break;
 
-      stop_col++;
+      stop_pos = cellpos;
     }
 
     pt->highlight = 1;
-    pt->highlight_start.row = pos.row;
-    pt->highlight_start.col = start_col;
-    pt->highlight_stop.row  = pos.row;
-    pt->highlight_stop.col  = stop_col;
+    pt->highlight_start = start_pos;
+    pt->highlight_stop  = stop_pos;
 
     repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
     flush_pending(pt);
