@@ -1554,7 +1554,7 @@ static GdkPixbuf *load_icon(GdkColor *background)
       "      fill: #%02x%02x%02x !important;\n"
       "    }\n"
       "  </style>\n"
-      "  <xi:include href=\"%s/pangoterm.svg" "\"/>\n"
+      "  <xi:include href=\"%s/pixmaps/pangoterm.svg" "\"/>\n"
       "</svg>",
       background->red   / 255,
       background->green / 255,

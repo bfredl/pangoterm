@@ -63,7 +63,7 @@ install-bin: pangoterm
 	$(LIBTOOL) --mode=install cp --remove-destination pangoterm $(DESTDIR)$(BINDIR)/pangoterm
 
 install-share:
-	install -d $(DESTDIR)$(SHAREDIR)
-	$(LIBTOOL) --mode=install cp pangoterm.svg $(DESTDIR)$(SHAREDIR)/pangoterm.svg
+	install -d $(DESTDIR)$(SHAREDIR)/pixmaps
+	$(LIBTOOL) --mode=install cp pangoterm.svg $(DESTDIR)$(SHAREDIR)/pixmaps/
 	install -d $(DESTDIR)$(SHAREDIR)/applications
 	$(LIBTOOL) --mode=install cp pangoterm.desktop $(DESTDIR)$(SHAREDIR)/applications/
