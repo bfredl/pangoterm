@@ -113,6 +113,12 @@ int main(int argc, char *argv[])
   if(!conf_parse(&argc, &argv))
     exit(1);
 
+  // GLib has consumed the options, but it might leave a -- in place in argv[1]
+  if(argc > 1 && strcmp(argv[1], "--") == 0) {
+    argv++;
+    argc--;
+  }
+
   gtk_init(&argc, &argv);
   setlocale(LC_CTYPE, NULL);
 
