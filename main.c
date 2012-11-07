@@ -172,8 +172,17 @@ int main(int argc, char *argv[])
   termios.c_cc[VTIME]    = 0;
 
   struct winsize size = { CONF_lines, CONF_cols, 0, 0 };
+
+  /* Save the real stderr before forkpty so we can still print errors to it if
+   * we fail
+   */
+  int stderr_save_fileno = dup(2);
+
   pid_t kid = forkpty(&master, NULL, &termios, &size);
   if(kid == 0) {
+    fcntl(stderr_save_fileno, F_SETFD, fcntl(stderr_save_fileno, F_GETFD) | FD_CLOEXEC);
+    FILE *stderr_save = fdopen(stderr_save_fileno, "a");
+
     /* Restore the ISIG signals back to defaults */
     signal(SIGINT,  SIG_DFL);
     signal(SIGQUIT, SIG_DFL);
@@ -186,17 +195,18 @@ int main(int argc, char *argv[])
 
     if(argc > 1) {
       execvp(argv[1], argv + 1);
-      fprintf(stderr, "Cannot exec(%s) - %s\n", argv[1], strerror(errno));
+      fprintf(stderr_save, "Cannot exec(%s) - %s\n", argv[1], strerror(errno));
     }
     else {
       char *shell = getenv("SHELL");
       char *args[2] = { shell, NULL };
       execvp(shell, args);
-      fprintf(stderr, "Cannot exec(%s) - %s\n", shell, strerror(errno));
+      fprintf(stderr_save, "Cannot exec(%s) - %s\n", shell, strerror(errno));
     }
     _exit(1);
   }
 
+  close(stderr_save_fileno);
   fcntl(master, F_SETFL, fcntl(master, F_GETFL) | O_NONBLOCK);
 
   GIOChannel *gio_master = g_io_channel_unix_new(master);
