@@ -514,13 +514,20 @@ static void flush_pending(PangoTerm *pt)
     return;
 
   cairo_t* gc = cairo_create(pt->buffer);
-  gdk_cairo_rectangle(gc, &pt->pending_area);
-  cairo_clip(gc);
 
   /* Background fill */
-  GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
-  gdk_cairo_set_source_color(gc, &bg);
-  cairo_paint(gc);
+  {
+    cairo_save(gc);
+
+    gdk_cairo_rectangle(gc, &pt->pending_area);
+    cairo_clip(gc);
+
+    GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
+    gdk_cairo_set_source_color(gc, &bg);
+    cairo_paint(gc);
+
+    cairo_restore(gc);
+  }
 
   if(pt->glyphs->len) {
     PangoLayout *layout = pt->pen.layout;
