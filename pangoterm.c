@@ -766,6 +766,15 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
               (int)(cursor_area.height * 0.15));
           cairo_fill(gc);
           break;
+        case VTERM_PROP_CURSORSHAPE_BAR_LEFT:
+          gdk_cairo_set_source_color(gc, &pt->cursor_col);
+          cairo_rectangle(gc,
+              cursor_area.x,
+              cursor_area.y,
+              (cursor_area.width * 0.15),
+              cursor_area.height);
+          cairo_fill(gc);
+          break;
         }
 
         cairo_destroy(gc);
