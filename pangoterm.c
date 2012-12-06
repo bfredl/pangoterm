@@ -180,47 +180,71 @@ static VTermKey convert_keyval(guint gdk_keyval, VTermModifier *statep)
   case GDK_KEY_KP_Tab:
     return VTERM_KEY_TAB;
   case GDK_KEY_Return:
-  case GDK_KEY_KP_Enter:
     return VTERM_KEY_ENTER;
   case GDK_KEY_Escape:
     return VTERM_KEY_ESCAPE;
 
   case GDK_KEY_Up:
-  case GDK_KEY_KP_Up:
     return VTERM_KEY_UP;
   case GDK_KEY_Down:
-  case GDK_KEY_KP_Down:
     return VTERM_KEY_DOWN;
   case GDK_KEY_Left:
-  case GDK_KEY_KP_Left:
     return VTERM_KEY_LEFT;
   case GDK_KEY_Right:
-  case GDK_KEY_KP_Right:
     return VTERM_KEY_RIGHT;
 
   case GDK_KEY_Insert:
-  case GDK_KEY_KP_Insert:
     return VTERM_KEY_INS;
   case GDK_KEY_Delete:
-  case GDK_KEY_KP_Delete:
     return VTERM_KEY_DEL;
   case GDK_KEY_Home:
-  case GDK_KEY_KP_Home:
     return VTERM_KEY_HOME;
   case GDK_KEY_End:
-  case GDK_KEY_KP_End:
     return VTERM_KEY_END;
   case GDK_KEY_Page_Up:
-  case GDK_KEY_KP_Page_Up:
     return VTERM_KEY_PAGEUP;
   case GDK_KEY_Page_Down:
-  case GDK_KEY_KP_Page_Down:
     return VTERM_KEY_PAGEDOWN;
 
   case GDK_KEY_ISO_Left_Tab:
     /* This is Shift-Tab */
     *statep |= VTERM_MOD_SHIFT;
     return VTERM_KEY_TAB;
+
+  case GDK_KEY_KP_Insert:
+    return VTERM_KEY_KP_0;
+  case GDK_KEY_KP_End:
+    return VTERM_KEY_KP_1;
+  case GDK_KEY_KP_Down:
+    return VTERM_KEY_KP_2;
+  case GDK_KEY_KP_Page_Down:
+    return VTERM_KEY_KP_3;
+  case GDK_KEY_KP_Left:
+    return VTERM_KEY_KP_4;
+  case GDK_KEY_KP_Begin:
+    return VTERM_KEY_KP_5;
+  case GDK_KEY_KP_Right:
+    return VTERM_KEY_KP_6;
+  case GDK_KEY_KP_Home:
+    return VTERM_KEY_KP_7;
+  case GDK_KEY_KP_Up:
+    return VTERM_KEY_KP_8;
+  case GDK_KEY_KP_Page_Up:
+    return VTERM_KEY_KP_9;
+  case GDK_KEY_KP_Delete:
+    return VTERM_KEY_KP_PERIOD;
+  case GDK_KEY_KP_Enter:
+    return VTERM_KEY_KP_ENTER;
+  case GDK_KEY_KP_Add:
+    return VTERM_KEY_KP_PLUS;
+  case GDK_KEY_KP_Subtract:
+    return VTERM_KEY_KP_MINUS;
+  case GDK_KEY_KP_Multiply:
+    return VTERM_KEY_KP_MULT;
+  case GDK_KEY_KP_Divide:
+    return VTERM_KEY_KP_DIVIDE;
+  case GDK_KEY_KP_Equal:
+    return VTERM_KEY_KP_EQUAL;
 
   default:
     return VTERM_KEY_NONE;
@@ -1180,9 +1204,11 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
 {
   PangoTerm *pt = user_data;
   /* GtkIMContext will eat a Shift-Space and not tell us about shift.
+   * Also don't let IME eat any GDK_KEY_KP_ events
    */
   gboolean ret = (event->state & GDK_SHIFT_MASK && event->keyval == ' ') ? FALSE
-      : gtk_im_context_filter_keypress(pt->im_context, event);
+               : (event->keyval >= GDK_KEY_KP_Space && GDK_KEY_KP_Divide) ? FALSE
+               : gtk_im_context_filter_keypress(pt->im_context, event);
 
   if(ret)
     return TRUE;
