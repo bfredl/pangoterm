@@ -10,7 +10,7 @@
 #include "conf.h"
 
 CONF_STRING(cursor, 0, "white", "Cursor colour", "COL");
-CONF_INT(cursor_shape, 0, 1, "Cursor shape (1=block 2=underbar)", "SHAPE");
+CONF_INT(cursor_shape, 0, 1, "Cursor shape (1=block 2=underbar 3=vertical bar)", "SHAPE");
 
 CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
 
