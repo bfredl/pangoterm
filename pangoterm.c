@@ -1006,6 +1006,8 @@ static int term_sb_popline(int cols, VTermScreenCell *cells, void *user_data)
     cells[col].width = 1;
   }
 
+  free(linebuffer);
+
   return 1;
 }
 
