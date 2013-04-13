@@ -951,42 +951,35 @@ static int term_damage(VTermRect rect, void *user_data)
   return 1;
 }
 
-static int term_prescroll(VTermRect rect, void *user_data)
+static int term_sb_pushline(int cols, const VTermScreenCell *cells, void *user_data)
 {
   PangoTerm *pt = user_data;
 
-  if(rect.start_row != 0 || rect.start_col != 0 || rect.end_col != pt->cols || pt->on_altscreen)
-    return 0;
+  PangoTermScrollbackLine *linebuffer = NULL;
+  if(pt->scroll_current == pt->scroll_size) {
+    /* Recycle old row if it's the right size */
+    if(pt->sb_buffer[pt->scroll_current-1]->cols == cols)
+      linebuffer = pt->sb_buffer[pt->scroll_current-1];
+    else
+      free(pt->sb_buffer[pt->scroll_current-1]);
 
-  for(int row = 0; row < rect.end_row; row++) {
-    PangoTermScrollbackLine *linebuffer = NULL;
-    if(pt->scroll_current == pt->scroll_size) {
-      /* Recycle old row if it's the right size */
-      if(pt->sb_buffer[pt->scroll_current-1]->cols == pt->cols)
-        linebuffer = pt->sb_buffer[pt->scroll_current-1];
-      else
-        free(pt->sb_buffer[pt->scroll_current-1]);
-
-      memmove(pt->sb_buffer + 1, pt->sb_buffer, sizeof(pt->sb_buffer[0]) * (pt->scroll_current - 1));
-    }
-    else if(pt->scroll_current > 0) {
-      memmove(pt->sb_buffer + 1, pt->sb_buffer, sizeof(pt->sb_buffer[0]) * pt->scroll_current);
-    }
-
-    if(!linebuffer) {
-      linebuffer = g_malloc0(sizeof(PangoTermScrollbackLine) + pt->cols * sizeof(linebuffer->cells[0]));
-      linebuffer->cols = pt->cols;
-    }
-
-    pt->sb_buffer[0] = linebuffer;
-
-    if(pt->scroll_current < pt->scroll_size)
-      pt->scroll_current++;
-
-    for(VTermPos pos = { .row = row, .col = 0 }; pos.col < pt->cols; pos.col++) {
-      vterm_screen_get_cell(pt->vts, pos, linebuffer->cells + pos.col);
-    }
+    memmove(pt->sb_buffer + 1, pt->sb_buffer, sizeof(pt->sb_buffer[0]) * (pt->scroll_current - 1));
   }
+  else if(pt->scroll_current > 0) {
+    memmove(pt->sb_buffer + 1, pt->sb_buffer, sizeof(pt->sb_buffer[0]) * pt->scroll_current);
+  }
+
+  if(!linebuffer) {
+    linebuffer = g_malloc0(sizeof(PangoTermScrollbackLine) + cols * sizeof(linebuffer->cells[0]));
+    linebuffer->cols = cols;
+  }
+
+  pt->sb_buffer[0] = linebuffer;
+
+  if(pt->scroll_current < pt->scroll_size)
+    pt->scroll_current++;
+
+  memcpy(linebuffer->cells, cells, sizeof(cells[0]) * cols);
 
   return 1;
 }
@@ -1114,12 +1107,12 @@ static int term_bell(void *user_data)
 
 static VTermScreenCallbacks cb = {
   .damage       = term_damage,
-  .prescroll    = term_prescroll,
   .moverect     = term_moverect,
   .movecursor   = term_movecursor,
   .settermprop  = term_settermprop,
   .setmousefunc = term_setmousefunc,
   .bell         = term_bell,
+  .sb_pushline  = term_sb_pushline,
 };
 
 static void scroll_delta(PangoTerm *pt, int delta)
