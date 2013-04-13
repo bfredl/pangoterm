@@ -984,6 +984,31 @@ static int term_sb_pushline(int cols, const VTermScreenCell *cells, void *user_d
   return 1;
 }
 
+static int term_sb_popline(int cols, VTermScreenCell *cells, void *user_data)
+{
+  PangoTerm *pt = user_data;
+
+  if(!pt->scroll_current)
+    return 0;
+
+  PangoTermScrollbackLine *linebuffer = pt->sb_buffer[0];
+  pt->scroll_current--;
+  memmove(pt->sb_buffer, pt->sb_buffer + 1, sizeof(pt->sb_buffer[0]) * (pt->scroll_current));
+
+  int cols_to_copy = cols;
+  if(cols_to_copy > linebuffer->cols)
+    cols_to_copy = linebuffer->cols;
+
+  memcpy(cells, linebuffer->cells, sizeof(cells[0]) * cols_to_copy);
+
+  for(int col = cols_to_copy; col < cols; col++) {
+    cells[col].chars[0] = 0;
+    cells[col].width = 1;
+  }
+
+  return 1;
+}
+
 static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
 {
   PangoTerm *pt = user_data;
@@ -1113,6 +1138,7 @@ static VTermScreenCallbacks cb = {
   .setmousefunc = term_setmousefunc,
   .bell         = term_bell,
   .sb_pushline  = term_sb_pushline,
+  .sb_popline   = term_sb_popline,
 };
 
 static void scroll_delta(PangoTerm *pt, int delta)
