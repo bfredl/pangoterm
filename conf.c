@@ -292,7 +292,7 @@ int conf_parse(int *argcp, char ***argvp)
       return 0;
   }
   else {
-    config_file = g_strdup_printf("%s/.config/pangoterm.cfg", getenv("HOME"));
+    config_file = g_strdup_printf("%s/pangoterm.cfg", g_get_user_config_dir());
     struct stat st;
     if(stat(config_file, &st) == 0)
       if(!conf_from_file(config_file))
