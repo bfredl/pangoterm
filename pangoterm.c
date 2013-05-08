@@ -460,6 +460,13 @@ static int is_wordchar(uint32_t c)
     return iswalnum(c) || (c == '_');
 }
 
+static void lf_to_cr(gchar *str)
+{
+  for( ; str[0]; str++)
+    if(str[0] == '\n')
+      str[0] = '\r';
+}
+
 /*
  * Repainting operations
  */
@@ -1243,6 +1250,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
       event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
     gchar *str = gtk_clipboard_wait_for_text(pt->selection_clipboard);
+    lf_to_cr(str);
 
     term_push_string(pt, str);
     return TRUE;
@@ -1337,6 +1345,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
     /* Middle-click pastes primary selection */
     gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
+    lf_to_cr(str);
 
     term_push_string(pt, str);
   }
