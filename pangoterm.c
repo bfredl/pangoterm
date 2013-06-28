@@ -1345,6 +1345,9 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
     /* Middle-click pastes primary selection */
     gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
+    if(!str)
+      return FALSE;
+
     lf_to_cr(str);
 
     term_push_string(pt, str);
