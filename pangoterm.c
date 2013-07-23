@@ -86,6 +86,8 @@ struct PangoTerm {
   GArray *glyph_widths;
   /* Pending area to erase in flush_pending */
   int erase_columns;
+  /* Is pending area DWL? */
+  int pending_dwl;
 
   struct {
     struct {
@@ -95,6 +97,8 @@ struct PangoTerm {
       unsigned int reverse   : 1;
       unsigned int strike    : 1;
       unsigned int font      : 4;
+      unsigned int dwl       : 1;
+      unsigned int dhl       : 2;
     } attrs;
     GdkColor fg_col;
     GdkColor bg_col;
@@ -545,12 +549,28 @@ static void flush_pending(PangoTerm *pt)
     return;
 
   cairo_t* gc = cairo_create(pt->buffer);
+  GdkRectangle pending_area = pt->pending_area;
+  int glyphs_x = pending_area.x;
+  int glyphs_y = pending_area.y;
+
+  if(pt->pen.attrs.dwl)
+    cairo_scale(gc, 2.0, 1.0);
+
+  if(pt->pen.attrs.dhl) {
+    cairo_scale(gc, 1.0, 2.0);
+    pending_area.y /= 2;
+    pending_area.height /= 2;
+    glyphs_y = pending_area.y;
+
+    if(pt->pen.attrs.dhl == 2)
+      glyphs_y -= pending_area.height;
+  }
 
   /* Background fill */
   {
     cairo_save(gc);
 
-    gdk_cairo_rectangle(gc, &pt->pending_area);
+    gdk_cairo_rectangle(gc, &pending_area);
     cairo_clip(gc);
 
     GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
@@ -595,11 +615,14 @@ static void flush_pending(PangoTerm *pt)
     /* Draw glyphs */
     GdkColor fg = pt->pen.attrs.reverse ? pt->pen.bg_col : pt->pen.fg_col;
     gdk_cairo_set_source_color(gc, &fg);
-    cairo_move_to(gc, pt->pending_area.x, pt->pending_area.y);
+    cairo_move_to(gc, glyphs_x, glyphs_y);
     pango_cairo_show_layout(gc, layout);
 
     g_string_truncate(pt->glyphs, 0);
   }
+
+  if(pt->pen.attrs.dwl)
+    pt->pending_area.x *= 2, pt->pending_area.width *= 2;
 
   if(pt->dirty_area.width && pt->pending_area.height)
     gdk_rectangle_union(&pt->pending_area, &pt->dirty_area, &pt->dirty_area);
@@ -714,6 +737,13 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     ADDATTR(pango_attr_family_new(pt->fonts[font]));
   }
 
+  if(cell->attrs.dwl != pt->pen.attrs.dwl ||
+     cell->attrs.dhl != pt->pen.attrs.dhl) {
+    pt->pen.attrs.dwl = cell->attrs.dwl;
+    pt->pen.attrs.dhl = cell->attrs.dhl;
+    flush_pending(pt);
+  }
+
   // Upscale 8->16bit
   col.red   = 257 * cell->fg.red;
   col.green = 257 * cell->fg.green;
@@ -753,6 +783,10 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
 
       VTermScreenCell cell;
       fetch_cell(pt, pos, &cell);
+
+      if(cell.attrs.dwl != pt->pending_dwl)
+        flush_pending(pt);
+      pt->pending_dwl = cell.attrs.dwl;
 
       /* Invert the RV attribute if this cell is selected */
       if(pt->highlight) {
