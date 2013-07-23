@@ -1497,7 +1497,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     if(pos_left1.col > 0) pos_left1.col--;
 
     if(fetch_is_eol(pt, pos_left1))
-      pt->drag_pos.col = pt->cols;
+      pt->drag_pos.col = pt->cols - 1;
 
     pt->highlight = 1;
     if(vterm_pos_cmp(pt->drag_start, pt->drag_pos) > 0) {
