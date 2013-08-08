@@ -350,6 +350,7 @@ static int fetch_is_eol(PangoTerm *pt, VTermPos pos)
 static size_t fetch_line_text(PangoTerm *pt, gchar *str, size_t len, VTermRect rect)
 {
   size_t ret = 0;
+  int skipped_blank = 0;
   int end_blank = 0;
 
   VTermPos pos = {
@@ -359,6 +360,15 @@ static size_t fetch_line_text(PangoTerm *pt, gchar *str, size_t len, VTermRect r
   while(pos.col < rect.end_col) {
     VTermScreenCell cell;
     fetch_cell(pt, pos, &cell);
+    if(!cell.chars[0])
+      skipped_blank++;
+    else
+      for(; skipped_blank; skipped_blank--) {
+        if(str)
+          str[ret] = 0x20;
+        ret++;
+      }
+
     for(int i = 0; cell.chars[i]; i++)
       ret += g_unichar_to_utf8(cell.chars[i], str ? str + ret : NULL);
 
