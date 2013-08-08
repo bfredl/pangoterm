@@ -1484,9 +1484,8 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     term_flush_output(pt);
   }
   else if(event->state & GDK_BUTTON1_MASK) {
-    VTermPos old_end = pt->dragging == DRAGGING ? pt->drag_pos : pt->drag_start;
-
-    if(pos.row == old_end.row && pos.col == old_end.col)
+    VTermPos old_pos = pt->dragging == DRAGGING ? pt->drag_pos : pt->drag_start;
+    if(pos.row == old_pos.row && pos.col == old_pos.col)
       /* Unchanged; stop here */
       return FALSE;
 
@@ -1496,10 +1495,11 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     VTermPos pos_left1 = pt->drag_pos;
     if(pos_left1.col > 0) pos_left1.col--;
 
-    if(fetch_is_eol(pt, pos_left1))
-      pt->drag_pos.col = pt->cols - 1;
-
     pt->highlight = 1;
+
+    VTermPos repaint_start = pt->highlight_start;
+    VTermPos repaint_stop  = pt->highlight_stop;
+
     if(vterm_pos_cmp(pt->drag_start, pt->drag_pos) > 0) {
       pt->highlight_start = pt->drag_pos;
       pt->highlight_stop  = pt->drag_start;
@@ -1508,12 +1508,17 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
       pt->highlight_start = pt->drag_start;
       pt->highlight_stop  = pt->drag_pos;
       pt->highlight_stop.col--; /* exclude partial cell */
+
+      if(fetch_is_eol(pt, pt->highlight_stop))
+        pt->highlight_stop.col = pt->cols - 1;
     }
 
-    if(vterm_pos_cmp(old_end, pt->drag_pos) > 0)
-      repaint_flow(pt, pt->drag_pos, old_end);
-    else
-      repaint_flow(pt, old_end, pt->drag_pos);
+    if(vterm_pos_cmp(pt->highlight_start, repaint_start) < 0)
+      repaint_start = pt->highlight_start;
+    if(vterm_pos_cmp(pt->highlight_stop, repaint_stop) > 0)
+      repaint_stop  = pt->highlight_stop;
+
+    repaint_flow(pt, repaint_start, repaint_stop);
 
     flush_pending(pt);
     blit_dirty(pt);
