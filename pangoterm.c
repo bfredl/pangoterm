@@ -1294,6 +1294,9 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
       event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
     gchar *str = gtk_clipboard_wait_for_text(pt->selection_clipboard);
+    if(!str)
+      return TRUE;
+
     lf_to_cr(str);
 
     term_push_string(pt, str);
@@ -1306,6 +1309,8 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
       return TRUE;
 
     gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
+    if(!text)
+      return TRUE;
 
     gtk_clipboard_clear(pt->selection_clipboard);
     gtk_clipboard_set_text(pt->selection_clipboard, text, -1);
