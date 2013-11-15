@@ -1690,7 +1690,18 @@ static GdkPixbuf *load_icon(GdkColor *background)
 {
   /* This technique stolen from 
    *   http://git.gnome.org/browse/gtk+/tree/gtk/gtkicontheme.c#n3180
+   *
+   *   Updated because rsvg no longer supports loading file: URL scheme, only
+   *   data:.
    */
+
+  gchar *icon;
+  gsize icon_len;
+  if(!g_file_get_contents(PANGOTERM_SHAREDIR "/pixmaps/pangoterm.svg", &icon, &icon_len, NULL))
+    return NULL;
+
+  gchar *icon_base64 = g_base64_encode((guchar*)icon, icon_len);
+  g_free(icon);
 
   gchar *str = g_strdup_printf(
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
@@ -1704,12 +1715,13 @@ static GdkPixbuf *load_icon(GdkColor *background)
       "      fill: #%02x%02x%02x !important;\n"
       "    }\n"
       "  </style>\n"
-      "  <xi:include href=\"%s/pixmaps/pangoterm.svg" "\"/>\n"
+      "  <xi:include href=\"data:image/svg+xml;base64,%s" "\"/>\n"
       "</svg>",
       background->red   / 255,
       background->green / 255,
       background->blue  / 255,
-      PANGOTERM_SHAREDIR);
+      icon_base64);
+  g_free(icon_base64);
 
   GInputStream *stream = g_memory_input_stream_new_from_data(str, -1, g_free);
 
