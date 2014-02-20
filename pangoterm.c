@@ -23,6 +23,8 @@ CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
 CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
 
+CONF_INT(scroll_wheel_delta, 0, 3, "Number of lines to scroll on mouse wheel", "LINES");
+
 CONF_BOOL(unscroll_on_output, 0, TRUE, "Scroll to bottom on output");
 CONF_BOOL(unscroll_on_key,    0, TRUE, "Scroll to bottom on keypress");
 
@@ -1574,8 +1576,8 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
   }
   else {
     switch(event->direction) {
-      case GDK_SCROLL_UP:   scroll_delta(pt, +3); break;
-      case GDK_SCROLL_DOWN: scroll_delta(pt, -3); break;
+      case GDK_SCROLL_UP:   scroll_delta(pt, +CONF_scroll_wheel_delta); break;
+      case GDK_SCROLL_DOWN: scroll_delta(pt, -CONF_scroll_wheel_delta); break;
       default:              return FALSE;
     }
   }
