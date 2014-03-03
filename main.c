@@ -41,6 +41,7 @@ CONF_STRING(term, 0, "xterm", "Terminal type", "STR");
 
 static char *alt_fonts[] = {
   "Courier 10 Pitch",
+  NULL
 };
 
 static int master;
