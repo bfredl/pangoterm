@@ -1337,15 +1337,27 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
    *   /usr/include/gtk-2.0/gdk/gdkkeysyms.h
    */
 
-  if(keyval)
+  if(keyval) {
+    /* Shift-Enter and Shift-Backspace are too easy to mistype accidentally
+     * Remove shift if it's the only modifier
+     */
+    if(state == VTERM_MOD_SHIFT && (keyval == VTERM_KEY_ENTER || keyval == VTERM_KEY_BACKSPACE))
+      state = 0;
+
     vterm_input_push_key(pt->vt, state, keyval);
+  }
   else if(event->keyval >= 0x10000000) /* Extension key, not printable Unicode */
     return FALSE;
   else if(event->keyval >= 0x01000000) /* Unicode shifted */
     vterm_input_push_char(pt->vt, state, event->keyval - 0x01000000);
-  else if(event->keyval < 0x0f00)
+  else if(event->keyval < 0x0f00) {
     /* event->keyval already contains a Unicode codepoint so that's easy */
+    /* Shift-Space is too easy to mistype so ignore that */
+    if(state == VTERM_MOD_SHIFT && event->keyval == ' ')
+      state = 0;
+
     vterm_input_push_char(pt->vt, state, event->keyval);
+  }
   else if(event->keyval >= GDK_KEY_KP_0 && event->keyval <= GDK_KEY_KP_9)
     /* event->keyval is a keypad number; just treat it as Unicode */
     vterm_input_push_char(pt->vt, state, event->keyval - GDK_KEY_KP_0 + '0');
