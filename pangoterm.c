@@ -30,6 +30,8 @@ CONF_BOOL(unscroll_on_key,    0, TRUE, "Scroll to bottom on keypress");
 
 CONF_BOOL(doubleclick_fullword, 0, FALSE, "Double-click selects fullwords (until whitespace)");
 
+CONF_STRING(geometry, 0, "", "Initial window geometry", "GEOM");
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -1950,6 +1952,9 @@ void pangoterm_start(PangoTerm *pt)
 
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_set_termprop(state, VTERM_PROP_CURSORSHAPE, &(VTermValue){ .number = CONF_cursor_shape });
+
+  if(CONF_geometry && CONF_geometry[0])
+    gtk_window_parse_geometry(GTK_WINDOW(pt->termwin), CONF_geometry);
 
   gtk_widget_show_all(pt->termwin);
 }
