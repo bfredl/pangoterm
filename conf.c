@@ -9,6 +9,8 @@
 #include <glib.h>
 #include <gtk/gtk.h>
 
+#define streq(a,b) (strcmp(a,b) == 0)
+
 ConfigEntry *configs = NULL;
 static char *profile = NULL;
 
@@ -257,6 +259,16 @@ int conf_parse(int *argcp, char ***argvp)
   g_option_context_add_main_entries(args_context, option_entries, NULL);
 
   g_option_context_add_group(args_context, gtk_get_option_group(TRUE));
+
+  /* Convert -e to -- so as to treat a -e option as a commandline vector
+   * to run, and satisfy the x-terminal-emulator spec
+   */
+  for(i = 0; i < *argcp; i++)
+    if(streq((*argvp)[i], "-e")) {
+      (*argvp)[i] = "--";
+      break;
+    }
+
   if(!g_option_context_parse(args_context, argcp, argvp, &args_error)) {
     fprintf(stderr, "Option parsing failed: %s\n", args_error->message);
     return 0;
