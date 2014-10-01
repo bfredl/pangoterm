@@ -1646,6 +1646,12 @@ static void widget_resize(GtkContainer* widget, gpointer user_data)
   if(cols == pt->cols && rows == pt->rows)
     return;
 
+  // Clamp to a minimum 1x1 size because libvterm doesn't like zero
+  if(!cols)
+    cols = 1;
+  if(!rows)
+    rows = 1;
+
   pt->cols = cols;
   pt->rows = rows;
 
