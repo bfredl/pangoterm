@@ -1968,7 +1968,7 @@ void pangoterm_push_bytes(PangoTerm *pt, const char *bytes, size_t len)
   if(CONF_unscroll_on_output && pt->scroll_offs)
     scroll_delta(pt, -pt->scroll_offs);
 
-  vterm_push_bytes(pt->vt, bytes, len);
+  vterm_input_write(pt->vt, bytes, len);
 }
 
 void pangoterm_begin_update(PangoTerm *pt)
