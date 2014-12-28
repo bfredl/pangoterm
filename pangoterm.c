@@ -1774,9 +1774,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   /* Create VTerm */
   pt->vt = vterm_new(rows, cols);
-
-  /* Set up parser */
-  vterm_parser_set_utf8(pt->vt, 1);
+  vterm_set_utf8(pt->vt, 1);
 
   /* Set up state */
   VTermState *state = vterm_obtain_state(pt->vt);
