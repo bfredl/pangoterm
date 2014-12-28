@@ -289,7 +289,7 @@ static void term_push_string(PangoTerm *pt, gchar *str)
     if(vterm_output_get_buffer_remaining(pt->vt) < 6)
       term_flush_output(pt);
 
-    vterm_input_push_char(pt->vt, 0, g_utf8_get_char(str));
+    vterm_keyboard_push_unichar(pt->vt, 0, g_utf8_get_char(str));
     str = g_utf8_next_char(str);
   }
 
@@ -1346,23 +1346,23 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     if(state == VTERM_MOD_SHIFT && (keyval == VTERM_KEY_ENTER || keyval == VTERM_KEY_BACKSPACE))
       state = 0;
 
-    vterm_input_push_key(pt->vt, state, keyval);
+    vterm_keyboard_push_key(pt->vt, state, keyval);
   }
   else if(event->keyval >= 0x10000000) /* Extension key, not printable Unicode */
     return FALSE;
   else if(event->keyval >= 0x01000000) /* Unicode shifted */
-    vterm_input_push_char(pt->vt, state, event->keyval - 0x01000000);
+    vterm_keyboard_push_unichar(pt->vt, state, event->keyval - 0x01000000);
   else if(event->keyval < 0x0f00) {
     /* event->keyval already contains a Unicode codepoint so that's easy */
     /* Shift-Space is too easy to mistype so ignore that */
     if(state == VTERM_MOD_SHIFT && event->keyval == ' ')
       state = 0;
 
-    vterm_input_push_char(pt->vt, state, event->keyval);
+    vterm_keyboard_push_unichar(pt->vt, state, event->keyval);
   }
   else if(event->keyval >= GDK_KEY_KP_0 && event->keyval <= GDK_KEY_KP_9)
     /* event->keyval is a keypad number; just treat it as Unicode */
-    vterm_input_push_char(pt->vt, state, event->keyval - GDK_KEY_KP_0 + '0');
+    vterm_keyboard_push_unichar(pt->vt, state, event->keyval - GDK_KEY_KP_0 + '0');
   else
     return FALSE;
 
