@@ -19,7 +19,7 @@ CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
 CONF_BOOL(bold_highbright, 0, TRUE, "Bold is high-brightness");
 CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
 
-CONF_BOOL(altscreen_scroll, 0, FALSE, "Emulate arrows for mouse scrolling when in alternate screen buffer");
+CONF_BOOL(altscreen_scroll, 0, FALSE, "Emulate arrows for mouse scrolling in alternate screen buffer");
 
 CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
@@ -1200,21 +1200,33 @@ static VTermScreenCallbacks cb = {
   .sb_popline   = term_sb_popline,
 };
 
-static void scroll_delta(PangoTerm *pt, int delta)
+static void altscreen_scroll(PangoTerm *pt, int delta, GtkOrientation orientation)
+{
+  if (CONF_altscreen_scroll) {
+    VTermKey which_arrow;
+    if(delta > 0) {
+      which_arrow = ((orientation == GTK_ORIENTATION_VERTICAL) ? VTERM_KEY_UP : VTERM_KEY_RIGHT);
+    } else if(delta < 0) {
+      which_arrow = ((orientation == GTK_ORIENTATION_VERTICAL) ? VTERM_KEY_DOWN : VTERM_KEY_LEFT);
+    }
+    for(int i=0; i < ((delta <= -1) ? -delta : delta); i++) {
+      vterm_keyboard_push_key(pt->vt, VTERM_MOD_NONE, which_arrow);
+    }
+    term_flush_output(pt);
+  }
+}
+
+static void hscroll_delta(PangoTerm *pt, int delta)
 {
   if(pt->on_altscreen) {
-    if (CONF_altscreen_scroll) {
-      VTermKey which_arrow;
-      if(delta > 0) {
-        which_arrow = VTERM_KEY_UP;
-      } else if(delta < 0) {
-        which_arrow = VTERM_KEY_DOWN;
-      }
-      for(int i=0; i < ((which_arrow == VTERM_KEY_DOWN) ? -delta : delta); i++) {
-        vterm_keyboard_push_key(pt->vt, VTERM_MOD_NONE, which_arrow);
-      }
-      term_flush_output(pt);
-    }
+    altscreen_scroll(pt, delta, GTK_ORIENTATION_HORIZONTAL);
+  }
+}
+
+static void vscroll_delta(PangoTerm *pt, int delta)
+{
+  if(pt->on_altscreen) {
+    altscreen_scroll(pt, delta, GTK_ORIENTATION_VERTICAL);
     return;
   }
 
@@ -1338,11 +1350,11 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     return TRUE;
   }
   if(event->keyval == GDK_KEY_Page_Down && event->state & GDK_SHIFT_MASK) {
-    scroll_delta(pt, -pt->rows / 2);
+    vscroll_delta(pt, -pt->rows / 2);
     return TRUE;
   }
   if(event->keyval == GDK_KEY_Page_Up && event->state & GDK_SHIFT_MASK) {
-    scroll_delta(pt, +pt->rows / 2);
+    vscroll_delta(pt, +pt->rows / 2);
     return TRUE;
   }
 
@@ -1382,7 +1394,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     return FALSE;
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
-    scroll_delta(pt, -pt->scroll_offs);
+    vscroll_delta(pt, -pt->scroll_offs);
 
   term_flush_output(pt);
 
@@ -1605,8 +1617,10 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
   }
   else {
     switch(event->direction) {
-      case GDK_SCROLL_UP:   scroll_delta(pt, +CONF_scroll_wheel_delta); break;
-      case GDK_SCROLL_DOWN: scroll_delta(pt, -CONF_scroll_wheel_delta); break;
+      case GDK_SCROLL_UP:    vscroll_delta(pt, +CONF_scroll_wheel_delta); break;
+      case GDK_SCROLL_DOWN:  vscroll_delta(pt, -CONF_scroll_wheel_delta); break;
+      case GDK_SCROLL_RIGHT: hscroll_delta(pt, +1); break;
+      case GDK_SCROLL_LEFT:  hscroll_delta(pt, -1); break;
       default:              return FALSE;
     }
   }
@@ -1621,7 +1635,7 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
   term_push_string(pt, str);
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
-    scroll_delta(pt, -pt->scroll_offs);
+    vscroll_delta(pt, -pt->scroll_offs);
 
   return FALSE;
 }
@@ -1981,7 +1995,7 @@ void pangoterm_start(PangoTerm *pt)
 void pangoterm_push_bytes(PangoTerm *pt, const char *bytes, size_t len)
 {
   if(CONF_unscroll_on_output && pt->scroll_offs)
-    scroll_delta(pt, -pt->scroll_offs);
+    vscroll_delta(pt, -pt->scroll_offs);
 
   vterm_input_write(pt->vt, bytes, len);
 }
