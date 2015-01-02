@@ -19,6 +19,8 @@ CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
 CONF_BOOL(bold_highbright, 0, TRUE, "Bold is high-brightness");
 CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
 
+CONF_BOOL(altscreen_scroll, 0, FALSE, "Emulate arrows for mouse scrolling when in alternate screen buffer");
+
 CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
 CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
@@ -1200,8 +1202,21 @@ static VTermScreenCallbacks cb = {
 
 static void scroll_delta(PangoTerm *pt, int delta)
 {
-  if(pt->on_altscreen)
+  if(pt->on_altscreen) {
+    if (CONF_altscreen_scroll) {
+      VTermKey which_arrow;
+      if(delta > 0) {
+        which_arrow = VTERM_KEY_UP;
+      } else if(delta < 0) {
+        which_arrow = VTERM_KEY_DOWN;
+      }
+      for(int i=0; i < ((which_arrow == VTERM_KEY_DOWN) ? -delta : delta); i++) {
+        vterm_keyboard_push_key(pt->vt, VTERM_MOD_NONE, which_arrow);
+      }
+      term_flush_output(pt);
+    }
     return;
+  }
 
   if(delta > 0) {
     if(pt->scroll_offs + delta > pt->scroll_current)
