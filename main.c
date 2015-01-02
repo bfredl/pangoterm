@@ -140,13 +140,31 @@ int main(int argc, char *argv[])
   /* None of the docs about termios explain how to construct a new one of
    * these, so this is largely a guess */
   struct termios termios = {
-    .c_iflag = ICRNL|IXON|IUTF8,
-    .c_oflag = OPOST|ONLCR|NL0|CR0|TAB0|BS0|VT0|FF0,
+    .c_iflag = ICRNL|IXON,
+    .c_oflag = OPOST|ONLCR|TAB0,
     .c_cflag = CS8|CREAD,
     .c_lflag = ISIG|ICANON|IEXTEN|ECHO|ECHOE|ECHOK,
     /* c_cc later */
   };
 
+#ifdef IUTF8
+  termios.c_iflag |= IUTF8;
+#endif
+#ifdef NL0
+  termios.c_oflag |= NL0;
+#endif
+#ifdef CR0
+  termios.c_oflag |= CR0;
+#endif
+#ifdef BS0
+  termios.c_oflag |= BS0;
+#endif
+#ifdef VT0
+  termios.c_oflag |= VT0;
+#endif
+#ifdef FF0
+  termios.c_oflag |= FF0;
+#endif
 #ifdef ECHOCTL
   termios.c_lflag |= ECHOCTL;
 #endif
