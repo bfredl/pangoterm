@@ -83,8 +83,7 @@ struct PangoTerm {
 
   GtkIMContext *im_context;
 
-  VTermMouseFunc mousefunc;
-  void *mousedata;
+  VTermMouseMode mousemode;
 
   GdkRectangle pending_area;
   /* Pending glyphs to flush in flush_pending */
@@ -1171,12 +1170,11 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
   return 1;
 }
 
-static int term_setmousefunc(VTermMouseFunc func, void *data, void *user_data)
+static int term_setmousemode(VTermMouseMode mode, void *user_data)
 {
   PangoTerm *pt = user_data;
 
-  pt->mousefunc = func;
-  pt->mousedata = data;
+  pt->mousemode = mode;
 
   return 1;
 }
@@ -1194,7 +1192,7 @@ static VTermScreenCallbacks cb = {
   .moverect     = term_moverect,
   .movecursor   = term_movecursor,
   .settermprop  = term_settermprop,
-  .setmousefunc = term_setmousefunc,
+  .setmousemode = term_setmousemode,
   .bell         = term_bell,
   .sb_pushline  = term_sb_pushline,
   .sb_popline   = term_sb_popline,
@@ -1418,7 +1416,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
+  if(pt->mousemode && !(event->state & GDK_SHIFT_MASK) && is_inside) {
     VTermModifier state = convert_modifier(event->state);
     int is_press;
     switch(event->type) {
@@ -1431,7 +1429,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     default:
       return TRUE;
     }
-    (*pt->mousefunc)(pos.col, pos.row, event->button, is_press, state, pt->mousedata);
+    vterm_mouse_button(pt->vt, event->button, is_press, state);
     term_flush_output(pt);
   }
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
@@ -1534,11 +1532,11 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK) && is_inside) {
+  if(pt->mousemode > VTERM_MOUSE_CLICK && !(event->state & GDK_SHIFT_MASK) && is_inside) {
     if(pos.row < 0 || pos.row >= pt->rows)
       return TRUE;
     VTermModifier state = convert_modifier(event->state);
-    (*pt->mousefunc)(pos.col, pos.row, 0, 0, state, pt->mousedata);
+    vterm_mouse_move(pt->vt, pos.row, pos.col, state);
     term_flush_output(pt);
   }
   else if(event->state & GDK_BUTTON1_MASK) {
@@ -1596,7 +1594,7 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
     .prow = event->y / pt->cell_height,
   };
 
-  if(pt->mousefunc && !(event->state & GDK_SHIFT_MASK)) {
+  if(pt->mousemode && !(event->state & GDK_SHIFT_MASK)) {
     VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
     if(pos.row < 0 || pos.row >= pt->rows)
       return TRUE;
@@ -1612,7 +1610,7 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
     }
     VTermModifier state = convert_modifier(event->state);
 
-    (*pt->mousefunc)(pos.col, pos.row, button, 1, state, pt->mousedata);
+    vterm_mouse_button(pt->vt, button, 1, state);
     term_flush_output(pt);
   }
   else {
