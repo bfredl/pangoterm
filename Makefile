@@ -67,3 +67,29 @@ install-share:
 	$(LIBTOOL) --mode=install cp pangoterm.svg $(DESTDIR)$(SHAREDIR)/pixmaps/
 	install -d $(DESTDIR)$(SHAREDIR)/applications
 	$(LIBTOOL) --mode=install cp pangoterm.desktop $(DESTDIR)$(SHAREDIR)/applications/
+
+# DIST CUT
+
+VERSION=0
+
+DISTDIR=pangoterm-$(VERSION)
+
+distdir: all
+	mkdir __distdir
+	cp LICENSE __distdir
+	cp *.c *.h __distdir
+	cp pangoterm.svg pangoterm.desktop pangoterm.cfg __distdir
+	sed "/^# DIST CUT/Q" <Makefile >__distdir/Makefile
+	mv __distdir $(DISTDIR)
+
+TARBALL=$(DISTDIR).tar.gz
+
+dist: distdir
+	tar -czf $(TARBALL) $(DISTDIR)
+	rm -rf $(DISTDIR)
+
+dist+bzr:
+	$(MAKE) dist VERSION=$(VERSION)+bzr`bzr revno`
+
+distdir+bzr:
+	$(MAKE) distdir VERSION=$(VERSION)+bzr`bzr revno`
