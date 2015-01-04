@@ -278,7 +278,7 @@ static void term_flush_output(PangoTerm *pt)
   size_t bufflen = vterm_output_get_buffer_current(pt->vt);
   if(bufflen) {
     char buffer[bufflen];
-    bufflen = vterm_output_bufferread(pt->vt, buffer, bufflen);
+    bufflen = vterm_output_read(pt->vt, buffer, bufflen);
     (*pt->writefn)(buffer, bufflen, pt->writefn_data);
   }
 }
