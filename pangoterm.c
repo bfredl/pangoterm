@@ -83,7 +83,7 @@ struct PangoTerm {
 
   GtkIMContext *im_context;
 
-  VTermMouseMode mousemode;
+  int mousemode;
 
   GdkRectangle pending_area;
   /* Pending glyphs to flush in flush_pending */
@@ -1161,20 +1161,15 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
 
   case VTERM_PROP_ALTSCREEN:
     pt->on_altscreen = val->boolean;
-    return 1;
+    break;
+
+  case VTERM_PROP_MOUSE:
+    pt->mousemode = val->number;
+    break;
 
   default:
     return 0;
   }
-
-  return 1;
-}
-
-static int term_setmousemode(VTermMouseMode mode, void *user_data)
-{
-  PangoTerm *pt = user_data;
-
-  pt->mousemode = mode;
 
   return 1;
 }
@@ -1188,14 +1183,13 @@ static int term_bell(void *user_data)
 }
 
 static VTermScreenCallbacks cb = {
-  .damage       = term_damage,
-  .moverect     = term_moverect,
-  .movecursor   = term_movecursor,
-  .settermprop  = term_settermprop,
-  .setmousemode = term_setmousemode,
-  .bell         = term_bell,
-  .sb_pushline  = term_sb_pushline,
-  .sb_popline   = term_sb_popline,
+  .damage      = term_damage,
+  .moverect    = term_moverect,
+  .movecursor  = term_movecursor,
+  .settermprop = term_settermprop,
+  .bell        = term_bell,
+  .sb_pushline = term_sb_pushline,
+  .sb_popline  = term_sb_popline,
 };
 
 static void altscreen_scroll(PangoTerm *pt, int delta, GtkOrientation orientation)
@@ -1532,7 +1526,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousemode > VTERM_MOUSE_CLICK && !(event->state & GDK_SHIFT_MASK) && is_inside) {
+  if(pt->mousemode > VTERM_PROP_MOUSE_CLICK && !(event->state & GDK_SHIFT_MASK) && is_inside) {
     if(pos.row < 0 || pos.row >= pt->rows)
       return TRUE;
     VTermModifier state = convert_modifier(event->state);
