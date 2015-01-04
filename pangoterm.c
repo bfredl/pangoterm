@@ -290,7 +290,7 @@ static void term_push_string(PangoTerm *pt, gchar *str)
     if(vterm_output_get_buffer_remaining(pt->vt) < 6)
       term_flush_output(pt);
 
-    vterm_keyboard_push_unichar(pt->vt, 0, g_utf8_get_char(str));
+    vterm_keyboard_unichar(pt->vt, g_utf8_get_char(str), 0);
     str = g_utf8_next_char(str);
   }
 
@@ -1202,7 +1202,7 @@ static void altscreen_scroll(PangoTerm *pt, int delta, GtkOrientation orientatio
       which_arrow = ((orientation == GTK_ORIENTATION_VERTICAL) ? VTERM_KEY_DOWN : VTERM_KEY_LEFT);
     }
     for(int i=0; i < ((delta <= -1) ? -delta : delta); i++) {
-      vterm_keyboard_push_key(pt->vt, VTERM_MOD_NONE, which_arrow);
+      vterm_keyboard_key(pt->vt, which_arrow, 0);
     }
     term_flush_output(pt);
   }
@@ -1350,8 +1350,8 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     return TRUE;
   }
 
-  VTermModifier state = convert_modifier(event->state);
-  VTermKey keyval = convert_keyval(event->keyval, &state);
+  VTermModifier mod = convert_modifier(event->state);
+  VTermKey keyval = convert_keyval(event->keyval, &mod);
 
   /*
    * See also
@@ -1362,26 +1362,26 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     /* Shift-Enter and Shift-Backspace are too easy to mistype accidentally
      * Remove shift if it's the only modifier
      */
-    if(state == VTERM_MOD_SHIFT && (keyval == VTERM_KEY_ENTER || keyval == VTERM_KEY_BACKSPACE))
-      state = 0;
+    if(mod == VTERM_MOD_SHIFT && (keyval == VTERM_KEY_ENTER || keyval == VTERM_KEY_BACKSPACE))
+      mod = 0;
 
-    vterm_keyboard_push_key(pt->vt, state, keyval);
+    vterm_keyboard_key(pt->vt, keyval, mod);
   }
   else if(event->keyval >= 0x10000000) /* Extension key, not printable Unicode */
     return FALSE;
   else if(event->keyval >= 0x01000000) /* Unicode shifted */
-    vterm_keyboard_push_unichar(pt->vt, state, event->keyval - 0x01000000);
+    vterm_keyboard_unichar(pt->vt, event->keyval - 0x01000000, mod);
   else if(event->keyval < 0x0f00) {
     /* event->keyval already contains a Unicode codepoint so that's easy */
     /* Shift-Space is too easy to mistype so ignore that */
-    if(state == VTERM_MOD_SHIFT && event->keyval == ' ')
-      state = 0;
+    if(mod == VTERM_MOD_SHIFT && event->keyval == ' ')
+      mod = 0;
 
-    vterm_keyboard_push_unichar(pt->vt, state, event->keyval);
+    vterm_keyboard_unichar(pt->vt, event->keyval, mod);
   }
   else if(event->keyval >= GDK_KEY_KP_0 && event->keyval <= GDK_KEY_KP_9)
     /* event->keyval is a keypad number; just treat it as Unicode */
-    vterm_keyboard_push_unichar(pt->vt, state, event->keyval - GDK_KEY_KP_0 + '0');
+    vterm_keyboard_unichar(pt->vt, event->keyval - GDK_KEY_KP_0 + '0', mod);
   else
     return FALSE;
 
