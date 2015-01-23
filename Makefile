@@ -74,7 +74,7 @@ VERSION=0
 
 DISTDIR=pangoterm-$(VERSION)
 
-distdir: all
+distdir:
 	mkdir __distdir
 	cp LICENSE __distdir
 	cp *.c *.h __distdir
