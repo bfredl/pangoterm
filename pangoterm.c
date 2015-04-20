@@ -165,7 +165,7 @@ struct PangoTerm {
   VTermPos drag_pos;
 
   /* Start and stop bounds of the selection */
-  int highlight;
+  bool highlight_valid;
   VTermPos highlight_start;
   VTermPos highlight_stop;
 
@@ -804,7 +804,7 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
       pt->pending_dwl = cell.attrs.dwl;
 
       /* Invert the RV attribute if this cell is selected */
-      if(pt->highlight) {
+      if(pt->highlight_valid) {
         VTermPos start = pt->highlight_start,
                  stop  = pt->highlight_stop;
 
@@ -974,10 +974,10 @@ static void store_clipboard(PangoTerm *pt)
 
 static void cancel_highlight(PangoTerm *pt)
 {
-  if(!pt->highlight)
+  if(!pt->highlight_valid)
     return;
 
-  pt->highlight = 0;
+  pt->highlight_valid = FALSE;
 
   repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
   flush_pending(pt);
@@ -992,7 +992,7 @@ static int term_damage(VTermRect rect, void *user_data)
 {
   PangoTerm *pt = user_data;
 
-  if(pt->highlight) {
+  if(pt->highlight_valid) {
     if((pt->highlight_start.row < rect.end_row - 1 ||
         (pt->highlight_start.row == rect.end_row - 1 && pt->highlight_start.col < rect.end_col - 1)) &&
        (pt->highlight_stop.row > rect.start_row ||
@@ -1074,7 +1074,7 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   flush_pending(pt);
   blit_dirty(pt);
 
-  if(pt->highlight) {
+  if(pt->highlight_valid) {
     int start_inside = vterm_rect_contains(src, pt->highlight_start);
     int stop_inside  = vterm_rect_contains(src, pt->highlight_stop);
 
@@ -1328,7 +1328,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   if((event->keyval == 'c' || event->keyval == 'C') &&
      event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK) {
     /* Ctrl-Shift-C copies to clipboard */
-    if(!pt->highlight)
+    if(!pt->highlight_valid)
       return TRUE;
 
     gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
@@ -1478,7 +1478,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
       stop_pos = cellpos;
     }
 
-    pt->highlight = 1;
+    pt->highlight_valid = true;
     pt->highlight_start = start_pos;
     pt->highlight_stop  = stop_pos;
 
@@ -1489,7 +1489,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   }
   else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
     /* Highlight an entire line */
-    pt->highlight = 1;
+    pt->highlight_valid = true;
     pt->highlight_start.row = pos.row;
     pt->highlight_start.col = 0;
     pt->highlight_stop.row  = pos.row;
@@ -1545,7 +1545,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
     VTermPos pos_left1 = pt->drag_pos;
     if(pos_left1.col > 0) pos_left1.col--;
 
-    pt->highlight = 1;
+    pt->highlight_valid = true;
 
     VTermPos repaint_start = pt->highlight_start;
     VTermPos repaint_stop  = pt->highlight_stop;
