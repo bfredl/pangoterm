@@ -1446,7 +1446,8 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     /* Always accept a release even when outside */
     pt->dragging = NO_DRAG;
 
-    store_clipboard(pt);
+    if(pt->highlight_valid)
+      store_clipboard(pt);
   }
   else if(event->button == 1 && event->type == GDK_2BUTTON_PRESS && is_inside) {
     /* Highlight a word. start with the position, and extend it both sides
