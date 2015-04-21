@@ -1423,6 +1423,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     default:
       return TRUE;
     }
+    vterm_mouse_move(pt->vt, pos.row, pos.col, state);
     vterm_mouse_button(pt->vt, event->button, is_press, state);
     term_flush_output(pt);
   }
@@ -1605,6 +1606,7 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
     }
     VTermModifier state = convert_modifier(event->state);
 
+    vterm_mouse_move(pt->vt, pos.row, pos.col, state);
     vterm_mouse_button(pt->vt, button, 1, state);
     term_flush_output(pt);
   }
