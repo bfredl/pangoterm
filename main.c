@@ -141,7 +141,11 @@ int main(int argc, char *argv[])
    * these, so this is largely a guess */
   struct termios termios = {
     .c_iflag = ICRNL|IXON,
-    .c_oflag = OPOST|ONLCR|TAB0,
+    .c_oflag = OPOST|ONLCR
+#ifdef TAB0
+      |TAB0
+#endif
+      ,
     .c_cflag = CS8|CREAD,
     .c_lflag = ISIG|ICANON|IEXTEN|ECHO|ECHOE|ECHOK,
     /* c_cc later */
