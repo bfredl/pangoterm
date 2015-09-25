@@ -283,8 +283,11 @@ static void term_flush_output(PangoTerm *pt)
   }
 }
 
-static void term_push_string(PangoTerm *pt, gchar *str)
+static void term_push_string(PangoTerm *pt, gchar *str, gboolean paste)
 {
+  if(paste)
+    vterm_keyboard_start_paste(pt->vt);
+
   while(str && str[0]) {
     /* 6 bytes is always enough for any UTF-8 character */
     if(vterm_output_get_buffer_remaining(pt->vt) < 6)
@@ -293,6 +296,9 @@ static void term_push_string(PangoTerm *pt, gchar *str)
     vterm_keyboard_unichar(pt->vt, g_utf8_get_char(str), 0);
     str = g_utf8_next_char(str);
   }
+
+  if(paste)
+    vterm_keyboard_end_paste(pt->vt);
 
   term_flush_output(pt);
 }
@@ -1322,7 +1328,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
 
     lf_to_cr(str);
 
-    term_push_string(pt, str);
+    term_push_string(pt, str, TRUE);
     return TRUE;
   }
   if((event->keyval == 'c' || event->keyval == 'C') &&
@@ -1435,7 +1441,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
 
     lf_to_cr(str);
 
-    term_push_string(pt, str);
+    term_push_string(pt, str, TRUE);
   }
   else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
     cancel_highlight(pt);
@@ -1627,7 +1633,7 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
 {
   PangoTerm *pt = user_data;
 
-  term_push_string(pt, str);
+  term_push_string(pt, str, FALSE);
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
     vscroll_delta(pt, -pt->scroll_offs);
