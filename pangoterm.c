@@ -1846,7 +1846,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
   g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(widget_focus_out), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(widget_quit), pt);
 
-  pt->im_context = gtk_im_context_simple_new();
+  pt->im_context = gtk_im_multicontext_new();
+  GdkWindow *gdkwin = gtk_widget_get_window(GTK_WIDGET(pt->termwin));
+  gtk_im_context_set_client_window(pt->im_context, gdkwin);
 
   g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
