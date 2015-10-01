@@ -1308,7 +1308,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
    * Also don't let IME eat any GDK_KEY_KP_ events
    */
   gboolean ret = (event->state & GDK_SHIFT_MASK && event->keyval == ' ') ? FALSE
-               : (event->keyval >= GDK_KEY_KP_Space && GDK_KEY_KP_Divide) ? FALSE
+               : (event->keyval >= GDK_KEY_KP_Space && event->keyval <= GDK_KEY_KP_Divide) ? FALSE
                : gtk_im_context_filter_keypress(pt->im_context, event);
 
   if(ret)
