@@ -670,7 +670,7 @@ static void put_glyph(PangoTerm *pt, const uint32_t chars[], int width, VTermPos
   if(destarea.y != pt->pending_area.y || destarea.x != pt->pending_area.x + pt->pending_area.width)
     flush_pending(pt);
 
-  char *chars_str = g_ucs4_to_utf8(chars, -1, NULL, NULL, NULL);
+  char *chars_str = g_ucs4_to_utf8(chars, VTERM_MAX_CHARS_PER_CELL, NULL, NULL, NULL);
 
   g_array_set_size(pt->glyph_widths, pt->glyphs->len + 1);
   g_array_index(pt->glyph_widths, int, pt->glyphs->len) = width;
