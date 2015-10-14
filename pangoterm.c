@@ -9,7 +9,10 @@
 
 #include "conf.h"
 
-CONF_STRING(cursor, 0, "white", "Cursor colour", "COL");
+CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
+CONF_STRING(background, 0, "black",  "Background colour", "COL");
+CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
+
 CONF_INT(cursor_shape, 0, 1, "Cursor shape (1=block 2=underbar 3=vertical bar)", "SHAPE");
 
 CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
@@ -1802,6 +1805,12 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gdk_color_parse(CONF_cursor, &pt->cursor_col);
 
+  GdkColor fg_col;
+  gdk_color_parse(CONF_foreground, &fg_col);
+
+  GdkColor bg_col;
+  gdk_color_parse(CONF_background, &bg_col);
+
   /* Create VTerm */
   pt->vt = vterm_new(rows, cols);
   vterm_set_utf8(pt->vt, 1);
@@ -1809,6 +1818,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
   /* Set up state */
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_set_bold_highbright(state, CONF_bold_highbright);
+
+  pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   /* Set up screen */
   pt->vts = vterm_obtain_screen(pt->vt);

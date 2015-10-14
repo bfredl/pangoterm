@@ -27,9 +27,6 @@
 
 #include "conf.h"
 
-CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
-CONF_STRING(background, 0, "black",  "Background colour", "COL");
-
 CONF_STRING(font, 0,   "DejaVu Sans Mono", "Font name", "STR");
 
 CONF_STRING(title, 0, "pangoterm", "Title", "STR");
@@ -124,14 +121,6 @@ int main(int argc, char *argv[])
   setlocale(LC_CTYPE, NULL);
 
   PangoTerm *pt = pangoterm_new(CONF_lines, CONF_cols);
-
-  GdkColor fg_col;
-  gdk_color_parse(CONF_foreground, &fg_col);
-
-  GdkColor bg_col;
-  gdk_color_parse(CONF_background, &bg_col);
-
-  pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   pangoterm_set_fonts(pt, CONF_font, alt_fonts);
 
