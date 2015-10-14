@@ -37,6 +37,12 @@ CONF_BOOL(doubleclick_fullword, 0, FALSE, "Double-click selects fullwords (until
 
 CONF_STRING(geometry, 0, "", "Initial window geometry", "GEOM");
 
+#define VTERM_COLOR_FROM_GDK_COLOR(c) \
+  ((VTermColor){ .red = (c).red / 257, .green = (c).green / 257, .blue = (c).blue / 257 })
+
+#define GDK_COLOR_FROM_VTERM_COLOR(c) \
+  ((GdkColor){ .red = 257 * (c).red, .green = 257 * (c).green, .blue = 257 * (c).blue })
+
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
 #endif
@@ -768,10 +774,7 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     flush_pending(pt);
   }
 
-  // Upscale 8->16bit
-  col.red   = 257 * cell->fg.red;
-  col.green = 257 * cell->fg.green;
-  col.blue  = 257 * cell->fg.blue;
+  col = GDK_COLOR_FROM_VTERM_COLOR(cell->fg);
 
   if(cursoroverride) {
     int grey = ((int)pt->cursor_col.red + pt->cursor_col.green + pt->cursor_col.blue)*2 > 65535*3
@@ -784,9 +787,7 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     pt->pen.fg_col = col;
   }
 
-  col.red   = 257 * cell->bg.red;
-  col.green = 257 * cell->bg.green;
-  col.blue  = 257 * cell->bg.blue;
+  col = GDK_COLOR_FROM_VTERM_COLOR(cell->bg);
 
   if(cursoroverride)
     col = pt->cursor_col;
@@ -1886,17 +1887,9 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_
 {
   pt->fg_col = *fg_col;
 
-  VTermColor fg;
-  fg.red   = fg_col->red   / 257;
-  fg.green = fg_col->green / 257;
-  fg.blue  = fg_col->blue  / 257;
-
-  VTermColor bg;
-  bg.red   = bg_col->red   / 257;
-  bg.green = bg_col->green / 257;
-  bg.blue  = bg_col->blue  / 257;
-
-  vterm_state_set_default_colors(vterm_obtain_state(pt->vt), &fg, &bg);
+  vterm_state_set_default_colors(vterm_obtain_state(pt->vt),
+      &VTERM_COLOR_FROM_GDK_COLOR(*fg_col),
+      &VTERM_COLOR_FROM_GDK_COLOR(*bg_col));
 
   GdkColormap* colormap = gdk_colormap_get_system();
   gdk_rgb_find_color(colormap, bg_col);
