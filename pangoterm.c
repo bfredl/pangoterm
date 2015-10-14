@@ -13,6 +13,21 @@ CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
 CONF_STRING(background, 0, "black",  "Background colour", "COL");
 CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
 
+static struct {
+  GdkColor col;
+  gboolean is_set;
+} colours[16];
+
+static void apply_colour(int index, ConfigValue v)
+{
+  if(index < 0 || index > 16)
+    return;
+
+  gdk_color_parse(v.s, &colours[index].col);
+  colours[index].is_set = true;
+}
+CONF_PARAMETRIC_STRING(colour, 0, apply_colour, "Palette colour", "COL");
+
 CONF_INT(cursor_shape, 0, 1, "Cursor shape (1=block 2=underbar 3=vertical bar)", "SHAPE");
 
 CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
@@ -1821,6 +1836,14 @@ PangoTerm *pangoterm_new(int rows, int cols)
   vterm_state_set_bold_highbright(state, CONF_bold_highbright);
 
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
+
+  for(int index = 0; index < sizeof(colours)/sizeof(colours[0]); index++) {
+    if(!colours[index].is_set)
+      break;
+
+    vterm_state_set_palette_color(state, index,
+        &VTERM_COLOR_FROM_GDK_COLOR(colours[index].col));
+  }
 
   /* Set up screen */
   pt->vts = vterm_obtain_screen(pt->vt);
