@@ -72,6 +72,22 @@ static int conf_from_file(const char *path)
         goto abort;
       }
 
+      int key;
+
+      if(cfg->is_parametric) {
+        if(g_scanner_get_next_token(scanner) != ':') {
+          g_scanner_error(scanner, "Expected ':'");
+          goto abort;
+        }
+
+        if(g_scanner_get_next_token(scanner) != G_TOKEN_INT) {
+          g_scanner_error(scanner, "Expected integer parameter index");
+          goto abort;
+        }
+
+        key = scanner->value.v_int;
+      }
+
       if(g_scanner_get_next_token(scanner) != G_TOKEN_EQUAL_SIGN) {
         g_scanner_error(scanner, "Expected '='");
         goto abort;
@@ -84,10 +100,16 @@ static int conf_from_file(const char *path)
             g_scanner_error(scanner, "Expected \"%s\" to take a string value", cfg->longname);
             goto abort;
           }
-          if(cfg->from_file.s)
-            g_free(cfg->from_file.s);
-          cfg->from_file.s = g_strdup(scanner->value.v_string);
-          cfg->var_set_from_file = TRUE;
+          if(cfg->is_parametric) {
+            ConfigValue value = { .s = scanner->value.v_string };
+            (*cfg->apply)(key, value);
+          }
+          else {
+            if(cfg->from_file.s)
+              g_free(cfg->from_file.s);
+            cfg->from_file.s = g_strdup(scanner->value.v_string);
+            cfg->var_set_from_file = TRUE;
+          }
           break;
         case CONF_TYPE_INT:
           if(t != G_TOKEN_INT) {
@@ -213,6 +235,9 @@ int conf_parse(int *argcp, char ***argvp)
 
   int i = 2;
   for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next, i++) {
+    if(cfg->is_parametric)
+      continue;
+
     char *longname = g_strdup(cfg->longname);
 
     /* Convert foo_bar to foo-bar; easier on commandline */
@@ -282,6 +307,9 @@ int conf_parse(int *argcp, char ***argvp)
    * this is the best we can do
    */
   for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next) {
+    if(cfg->is_parametric)
+      continue;
+
     switch(cfg->type) {
       case CONF_TYPE_STRING:
         cfg->var_set = *(void**)cfg->var != NULL;
@@ -313,6 +341,9 @@ int conf_parse(int *argcp, char ***argvp)
   }
 
   for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next) {
+    if(cfg->is_parametric)
+      continue;
+
     switch(cfg->type) {
       case CONF_TYPE_STRING:
         if(!cfg->var_set)

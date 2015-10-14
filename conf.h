@@ -1,12 +1,20 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
+#include <stdbool.h>
+
 typedef enum {
   CONF_TYPE_STRING,
   CONF_TYPE_INT,
   CONF_TYPE_DOUBLE,
   CONF_TYPE_BOOL,
 } ConfigType;
+
+typedef union {
+  char *s;
+  int i;
+  double d;
+} ConfigValue;
 
 typedef struct ConfigEntry ConfigEntry;
 struct ConfigEntry {
@@ -16,25 +24,21 @@ struct ConfigEntry {
   char shortname;
 
   ConfigType type;
+  bool is_parametric;
 
-  void *var;    /* ptr to char* or int or double */
+  union {
+    void *var;    /* ptr to char* or int or double */
+    void (*apply)(int key, ConfigValue value);
+  };
   int var_set;
 
   const char *desc;
   const char *argdesc;
 
-  union {
-    char *s;
-    int i;
-    double d;
-  } from_file;
+  ConfigValue from_file;
   int var_set_from_file;
 
-  union {
-    char *s;
-    int i;
-    double d;
-  } dflt;
+  ConfigValue dflt;
 };
 
 extern ConfigEntry *configs;
@@ -51,6 +55,21 @@ extern ConfigEntry *configs;
       .desc = desc_,                                              \
       .argdesc = argdesc_,                                        \
       .dflt.s = dflt_,                                            \
+    };                                                            \
+    config.next = configs;                                        \
+    configs = &config;                                            \
+  }
+
+#define CONF_PARAMETRIC_STRING(name,shortname_,func,desc_,argdesc_) \
+  static void __attribute__((constructor)) DECLARE_##name(void) { \
+    static ConfigEntry config = {                                 \
+      .longname = #name,                                          \
+      .shortname = shortname_,                                    \
+      .type = CONF_TYPE_STRING,                                   \
+      .is_parametric = true,                                      \
+      .apply = func,                                              \
+      .desc = desc_,                                              \
+      .argdesc = argdesc_,                                        \
     };                                                            \
     config.next = configs;                                        \
     configs = &config;                                            \
