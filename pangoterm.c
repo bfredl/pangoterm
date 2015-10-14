@@ -1919,8 +1919,10 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_
   gdk_window_set_background(pt->termdraw, bg_col);
 
   GdkPixbuf *icon = load_icon(bg_col);
-  gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
-  g_object_unref(icon);
+  if(icon) {
+    gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
+    g_object_unref(icon);
+  }
 }
 
 void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
