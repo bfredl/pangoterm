@@ -1821,12 +1821,6 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gdk_color_parse(CONF_cursor, &pt->cursor_col);
 
-  GdkColor fg_col;
-  gdk_color_parse(CONF_foreground, &fg_col);
-
-  GdkColor bg_col;
-  gdk_color_parse(CONF_background, &bg_col);
-
   /* Create VTerm */
   pt->vt = vterm_new(rows, cols);
   vterm_set_utf8(pt->vt, 1);
@@ -1834,8 +1828,6 @@ PangoTerm *pangoterm_new(int rows, int cols)
   /* Set up state */
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_set_bold_highbright(state, CONF_bold_highbright);
-
-  pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   for(int index = 0; index < sizeof(colours)/sizeof(colours[0]); index++) {
     if(!colours[index].is_set)
@@ -1994,6 +1986,14 @@ void pangoterm_start(PangoTerm *pt)
   pt->cell_width_pango = width;
   pt->cell_width  = PANGO_PIXELS_CEIL(width);
   pt->cell_height = PANGO_PIXELS_CEIL(height);
+
+  GdkColor fg_col;
+  gdk_color_parse(CONF_foreground, &fg_col);
+
+  GdkColor bg_col;
+  gdk_color_parse(CONF_background, &bg_col);
+
+  pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   gtk_window_resize(GTK_WINDOW(pt->termwin),
       pt->cols * pt->cell_width, pt->rows * pt->cell_height);
