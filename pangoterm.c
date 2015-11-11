@@ -23,6 +23,7 @@ static void apply_colour(int index, ConfigValue v)
   if(index < 0 || index > 16)
     return;
 
+  colours[index].col = (GdkColor){ 0, 0, 0 };
   gdk_color_parse(v.s, &colours[index].col);
   colours[index].is_set = true;
 }
@@ -1843,6 +1844,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->fonts[1] = NULL;
   pt->font_size = CONF_size;
 
+  pt->cursor_col = (GdkColor){ 0xffff, 0xffff, 0xffff };
   gdk_color_parse(CONF_cursor, &pt->cursor_col);
 
   /* Create VTerm */
@@ -2012,10 +2014,10 @@ void pangoterm_start(PangoTerm *pt)
   pt->cell_width  = PANGO_PIXELS_CEIL(width);
   pt->cell_height = PANGO_PIXELS_CEIL(height);
 
-  GdkColor fg_col;
+  GdkColor fg_col = { 0xffff * 0.90, 0xffff * 0.90, 0xffff * 0.90 };
   gdk_color_parse(CONF_foreground, &fg_col);
 
-  GdkColor bg_col;
+  GdkColor bg_col = { 0, 0, 0 };
   gdk_color_parse(CONF_background, &bg_col);
 
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
