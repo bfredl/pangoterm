@@ -164,6 +164,7 @@ struct PangoTerm {
   int cell_height;
 
   GdkColor fg_col;
+  GdkColor bg_col;
 
   int has_focus;
   int cursor_visible;    /* VTERM_PROP_CURSORVISIBLE */
@@ -1087,8 +1088,13 @@ static int term_sb_popline(int cols, VTermScreenCell *cells, void *user_data)
   memcpy(cells, linebuffer->cells, sizeof(cells[0]) * cols_to_copy);
 
   for(int col = cols_to_copy; col < cols; col++) {
-    cells[col].chars[0] = 0;
-    cells[col].width = 1;
+    cells[col] = (VTermScreenCell){
+      .chars = {0},
+      .width = 1,
+      .attrs = {},
+      .fg = VTERM_COLOR_FROM_GDK_COLOR(pt->fg_col),
+      .bg = VTERM_COLOR_FROM_GDK_COLOR(pt->bg_col),
+    };
   }
 
   free(linebuffer);
@@ -1919,6 +1925,7 @@ void pangoterm_free(PangoTerm *pt)
 void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col)
 {
   pt->fg_col = *fg_col;
+  pt->bg_col = *bg_col;
 
   vterm_state_set_default_colors(vterm_obtain_state(pt->vt),
       &VTERM_COLOR_FROM_GDK_COLOR(*fg_col),
