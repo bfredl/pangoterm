@@ -52,6 +52,10 @@ CONF_BOOL(doubleclick_fullword, 0, FALSE, "Double-click selects fullwords (until
 
 CONF_STRING(geometry, 0, "", "Initial window geometry", "GEOM");
 
+CONF_BOOL(chord_shift_space,     0, TRUE, "Shift-Space chording");
+CONF_BOOL(chord_shift_backspace, 0, TRUE, "Shift-Backspace chording");
+CONF_BOOL(chord_shift_enter,     0, TRUE, "Shift-Enter chording");
+
 #define VTERM_COLOR_FROM_GDK_COLOR(c) \
   ((VTermColor){ .red = (c).red / 257, .green = (c).green / 257, .blue = (c).blue / 257 })
 
@@ -1385,10 +1389,23 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
 
   if(keyval) {
     /* Shift-Enter and Shift-Backspace are too easy to mistype accidentally
-     * Remove shift if it's the only modifier
+     * Optionally remove shift if it's the only modifier
      */
-    if(mod == VTERM_MOD_SHIFT && (keyval == VTERM_KEY_ENTER || keyval == VTERM_KEY_BACKSPACE))
-      mod = 0;
+    if(mod == VTERM_MOD_SHIFT)
+      switch(keyval) {
+        case VTERM_KEY_ENTER:
+          if(!CONF_chord_shift_enter)
+            mod = 0;
+          break;
+
+        case VTERM_KEY_BACKSPACE:
+          if(!CONF_chord_shift_backspace)
+            mod = 0;
+          break;
+
+        default:
+          break;
+      }
 
     vterm_keyboard_key(pt->vt, keyval, mod);
   }
@@ -1398,9 +1415,10 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     vterm_keyboard_unichar(pt->vt, event->keyval - 0x01000000, mod);
   else if(event->keyval < 0x0f00) {
     /* event->keyval already contains a Unicode codepoint so that's easy */
-    /* Shift-Space is too easy to mistype so ignore that */
+    /* Shift-Space is too easy to mistype so optionally ignore that */
     if(mod == VTERM_MOD_SHIFT && event->keyval == ' ')
-      mod = 0;
+      if(!CONF_chord_shift_space)
+        mod = 0;
 
     vterm_keyboard_unichar(pt->vt, event->keyval, mod);
   }
