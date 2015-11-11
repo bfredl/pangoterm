@@ -234,7 +234,7 @@ int conf_parse(int *argcp, char ***argvp)
   option_entries[1].arg_description = "PROFILE";
 
   int i = 2;
-  for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next, i++) {
+  for(ConfigEntry *cfg = configs; cfg; cfg = cfg->next) {
     if(cfg->is_parametric)
       continue;
 
@@ -273,6 +273,8 @@ int conf_parse(int *argcp, char ***argvp)
         option_entries[i].description = g_strdup_printf("Disable %s", cfg->desc);
         break;
     }
+
+    i++;
   }
 
   option_entries[i].long_name = NULL;
