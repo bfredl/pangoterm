@@ -1857,7 +1857,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   for(int index = 0; index < sizeof(colours)/sizeof(colours[0]); index++) {
     if(!colours[index].is_set)
-      break;
+      continue;
 
     vterm_state_set_palette_color(state, index,
         &VTERM_COLOR_FROM_GDK_COLOR(colours[index].col));
