@@ -5,6 +5,7 @@
 
 #include <cairo/cairo.h>
 #include <gtk/gtk.h>
+#include <gdk/gdkkeys.h>
 #include <gdk/gdkkeysyms.h>
 
 #include "conf.h"
@@ -1421,13 +1422,17 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   else if(event->keyval >= 0x01000000) /* Unicode shifted */
     vterm_keyboard_unichar(pt->vt, event->keyval - 0x01000000, mod);
   else if(event->keyval < 0x0f00) {
-    /* event->keyval already contains a Unicode codepoint so that's easy */
+    /* GDK key code; convert to Unicode */
+    guint32 unichar = gdk_keyval_to_unicode(event->keyval);
+    if (unichar == 0)
+      return FALSE;
+
     /* Shift-Space is too easy to mistype so optionally ignore that */
     if(mod == VTERM_MOD_SHIFT && event->keyval == ' ')
       if(!CONF_chord_shift_space)
         mod = 0;
 
-    vterm_keyboard_unichar(pt->vt, event->keyval, mod);
+    vterm_keyboard_unichar(pt->vt, unichar, mod);
   }
   else if(event->keyval >= GDK_KEY_KP_0 && event->keyval <= GDK_KEY_KP_9)
     /* event->keyval is a keypad number; just treat it as Unicode */
