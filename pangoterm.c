@@ -849,8 +849,9 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
 
       int cursor_here = pos.row == pt->cursorpos.row && pos.col == pt->cursorpos.col;
       int cursor_visible = CURSOR_ENABLED(pt) && (pt->cursor_blinkstate || !pt->has_focus);
+      int draw_cursor = cursor_visible && cursor_here;
 
-      chpen(&cell, pt, cursor_visible && cursor_here && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
+      chpen(&cell, pt, draw_cursor && pt->cursor_shape == VTERM_PROP_CURSORSHAPE_BLOCK);
 
       if(cell.chars[0] == 0) {
         put_erase(pt, cell.width, pos);
@@ -859,37 +860,41 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
         put_glyph(pt, cell.chars, cell.width, pos);
       }
 
-      if(cursor_visible && cursor_here && pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
-        flush_pending(pt);
-
-        cairo_t *gc = cairo_create(pt->buffer);
-
+      if(draw_cursor) {
         GdkRectangle cursor_area = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, 1);
-        gdk_cairo_rectangle(gc, &cursor_area);
-        cairo_clip(gc);
+        gtk_im_context_set_cursor_location(pt->im_context, &cursor_area);
 
-        switch(pt->cursor_shape) {
-        case VTERM_PROP_CURSORSHAPE_UNDERLINE:
-          gdk_cairo_set_source_color(gc, &pt->cursor_col);
-          cairo_rectangle(gc,
-              cursor_area.x,
-              cursor_area.y + (int)(cursor_area.height * 0.85),
-              cursor_area.width,
-              (int)(cursor_area.height * 0.15));
-          cairo_fill(gc);
-          break;
-        case VTERM_PROP_CURSORSHAPE_BAR_LEFT:
-          gdk_cairo_set_source_color(gc, &pt->cursor_col);
-          cairo_rectangle(gc,
-              cursor_area.x,
-              cursor_area.y,
-              (cursor_area.width * 0.15),
-              cursor_area.height);
-          cairo_fill(gc);
-          break;
+        if (pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
+          flush_pending(pt);
+
+          cairo_t *gc = cairo_create(pt->buffer);
+
+          gdk_cairo_rectangle(gc, &cursor_area);
+          cairo_clip(gc);
+
+          switch(pt->cursor_shape) {
+          case VTERM_PROP_CURSORSHAPE_UNDERLINE:
+            gdk_cairo_set_source_color(gc, &pt->cursor_col);
+            cairo_rectangle(gc,
+                cursor_area.x,
+                cursor_area.y + (int)(cursor_area.height * 0.85),
+                cursor_area.width,
+                (int)(cursor_area.height * 0.15));
+            cairo_fill(gc);
+            break;
+          case VTERM_PROP_CURSORSHAPE_BAR_LEFT:
+            gdk_cairo_set_source_color(gc, &pt->cursor_col);
+            cairo_rectangle(gc,
+                cursor_area.x,
+                cursor_area.y,
+                (cursor_area.width * 0.15),
+                cursor_area.height);
+            cairo_fill(gc);
+            break;
+          }
+
+          cairo_destroy(gc);
         }
-
-        cairo_destroy(gc);
       }
 
       ph_pos.pcol += cell.width;
@@ -1448,6 +1453,12 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   return FALSE;
 }
 
+static gboolean widget_keyrelease(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+  return gtk_im_context_filter_keypress(pt->im_context, event);
+}
+
 static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -1767,6 +1778,8 @@ static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer us
     flush_pending(pt);
     blit_dirty(pt);
   }
+
+  gtk_im_context_focus_in(pt->im_context);
 }
 
 static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
@@ -1780,6 +1793,7 @@ static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer u
     flush_pending(pt);
     blit_dirty(pt);
   }
+  gtk_im_context_focus_out(pt->im_context);
 }
 
 static void widget_quit(GtkContainer* widget, gpointer unused_data)
@@ -1896,6 +1910,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(widget_expose), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(widget_keypress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "key-release-event", GTK_SIGNAL_FUNC(widget_keyrelease), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(widget_mousemove), pt);
@@ -1907,6 +1922,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->im_context = gtk_im_multicontext_new();
   GdkWindow *gdkwin = gtk_widget_get_window(GTK_WIDGET(pt->termwin));
   gtk_im_context_set_client_window(pt->im_context, gdkwin);
+  gtk_im_context_set_use_preedit(pt->im_context, false);
 
   g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
