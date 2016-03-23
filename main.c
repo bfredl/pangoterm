@@ -116,6 +116,7 @@ static gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer 
 
 int main(int argc, char *argv[])
 {
+  setenv("GDK_SCALE", "1", TRUE);
   if(!conf_parse(&argc, &argv))
     exit(1);
 
