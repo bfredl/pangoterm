@@ -183,7 +183,7 @@ struct PangoTerm {
   GtkWidget *termwin;
 
   cairo_surface_t *buffer;
-  GdkDrawable *termdraw;
+  GdkWindow *termdraw;
   /* area in buffer that needs flushing to termdraw */
   GdkRectangle dirty_area;
 
@@ -1194,7 +1194,7 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     break;
 
   case VTERM_PROP_ICONNAME:
-    gdk_window_set_icon_name(GDK_WINDOW(pt->termwin->window), val->string);
+    gdk_window_set_icon_name(GDK_WINDOW(pt->termdraw), val->string);
     break;
 
   case VTERM_PROP_TITLE:
@@ -1701,9 +1701,12 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
   return FALSE;
 }
 
-static gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer user_data)
+static gboolean widget_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
   PangoTerm *pt = user_data;
+  GdkRectangle rect;
+  gdk_cairo_get_clip_rectangle(cr, &rect);
+
 
   /* GDK always sends resize events before expose events, so it's possible this
    * expose event is for a region that now doesn't exist.
@@ -1712,13 +1715,13 @@ static gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer
   int bottom = pt->rows * pt->cell_height;
 
   /* Trim to still-valid area, or ignore if there's nothing remaining */
-  if(event->area.x + event->area.width > right)
-    event->area.width = right - event->area.x;
-  if(event->area.y + event->area.height > bottom)
-    event->area.height = bottom - event->area.y;
+  if(rect.x + rect.width > right)
+    rect.width = right - rect.x;
+  if(rect.y + rect.height > bottom)
+    rect.height = bottom - rect.y;
 
-  if(event->area.height && event->area.width)
-    blit_buffer(pt, &event->area);
+  if(rect.height && rect.width)
+    blit_buffer(pt, &rect);
 
   return TRUE;
 }
@@ -1898,34 +1901,33 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gtk_widget_realize(pt->termwin);
 
-  pt->termdraw = pt->termwin->window;
+  pt->termdraw = gtk_widget_get_window(pt->termwin);
 
-  gdk_window_set_cursor(GDK_WINDOW(pt->termdraw), gdk_cursor_new(GDK_XTERM));
+  gdk_window_set_cursor(pt->termdraw, gdk_cursor_new(GDK_XTERM));
 
   cursor_start_blinking(pt);
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
-  GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
-  gdk_window_set_events(pt->termwin->window, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK);
+  GdkEventMask mask = gdk_window_get_events(pt->termdraw);
+  gdk_window_set_events(pt->termdraw, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK|GDK_SCROLL_MASK);
 
-  g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(widget_expose), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(widget_keypress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "key-release-event", GTK_SIGNAL_FUNC(widget_keyrelease), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(widget_mousemove), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  GTK_SIGNAL_FUNC(widget_scroll), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  GTK_SIGNAL_FUNC(widget_focus_in),  pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(widget_focus_out), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(widget_quit), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", G_CALLBACK(widget_keypress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "key-release-event", G_CALLBACK(widget_keyrelease), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  G_CALLBACK(widget_mousemove), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", G_CALLBACK(widget_focus_out), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
 
   pt->im_context = gtk_im_multicontext_new();
-  GdkWindow *gdkwin = gtk_widget_get_window(GTK_WIDGET(pt->termwin));
-  gtk_im_context_set_client_window(pt->im_context, gdkwin);
+  gtk_im_context_set_client_window(pt->im_context, pt->termdraw);
   gtk_im_context_set_use_preedit(pt->im_context, false);
 
-  g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
+  g_signal_connect(G_OBJECT(pt->im_context), "commit", G_CALLBACK(widget_im_commit), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", G_CALLBACK(widget_resize), pt);
 
   pt->dragging = NO_DRAG;
 
@@ -1954,8 +1956,8 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_
       &VTERM_COLOR_FROM_GDK_COLOR(*fg_col),
       &VTERM_COLOR_FROM_GDK_COLOR(*bg_col));
 
-  GdkColormap* colormap = gdk_colormap_get_system();
-  gdk_rgb_find_color(colormap, bg_col);
+  //GdkVisual* colormap = gdk_visual_get_system();
+  //gdk_rgb_find_color(colormap, bg_col);
   gdk_window_set_background(pt->termdraw, bg_col);
 
   GdkPixbuf *icon = load_icon(bg_col);
