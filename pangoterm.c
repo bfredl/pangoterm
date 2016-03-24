@@ -1998,6 +1998,12 @@ void pangoterm_free(PangoTerm *pt)
   vterm_free(pt->vt);
 }
 
+unsigned long pangoterm_get_xid(PangoTerm *pt)
+{
+  GdkWindow *win = gtk_widget_get_window(pt->termwin);
+  return gdk_x11_window_get_xid(win);
+}
+
 void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col)
 {
   pt->fg_col = *fg_col;

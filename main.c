@@ -134,6 +134,11 @@ int main(int argc, char *argv[])
 
   pangoterm_set_title(pt, CONF_title);
 
+  unsigned long xid = pangoterm_get_xid(pt);
+  char buf[256];
+  snprintf(buf, 265, "%lu", xid);
+  setenv("WINDOWID", buf, TRUE);
+
   /* None of the docs about termios explain how to construct a new one of
    * these, so this is largely a guess */
   struct termios termios = {
