@@ -36,6 +36,7 @@
 #include "conf.h"
 
 CONF_STRING(font, 0,   "DejaVu Sans Mono", "Font name", "STR");
+CONF_STRING(font_italic, 0,   "", "Italic Font name", "STR");
 
 CONF_STRING(title, 0, "pangoterm", "Title", "STR");
 
@@ -131,7 +132,7 @@ int main(int argc, char *argv[])
 
   PangoTerm *pt = pangoterm_new(CONF_lines, CONF_cols);
 
-  pangoterm_set_fonts(pt, CONF_font, alt_fonts);
+  pangoterm_set_fonts(pt, CONF_font, CONF_font_italic, alt_fonts);
 
   pangoterm_set_title(pt, CONF_title);
 
