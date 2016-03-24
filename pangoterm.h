@@ -14,7 +14,7 @@ guint32 pangoterm_get_windowid(PangoTerm *pt);
 
 void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col);
 void pangoterm_set_font_size(PangoTerm *pt, double size);
-void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts); // ptr not value
+void pangoterm_set_fonts(PangoTerm *pt, char *font, char *font_italic, char **alt_fonts); // ptr not value
 
 void pangoterm_set_title(PangoTerm *pt, const char *title);
 

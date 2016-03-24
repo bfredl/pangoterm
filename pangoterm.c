@@ -164,6 +164,7 @@ struct PangoTerm {
 
   int n_fonts;
   char **fonts;
+  char *font_italic;
   double font_size;
 
   int cell_width_pango;
@@ -847,10 +848,23 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     }
   }
 
+  if(cell->attrs.font != pt->pen.attrs.font) {
+    int font = pt->pen.attrs.font = cell->attrs.font;
+    if(font >= pt->n_fonts)
+      font = 0;
+    flush_pending(pt);
+    ADDATTR(pango_attr_family_new(pt->fonts[font]));
+  }
+
   if(cell->attrs.italic != pt->pen.attrs.italic) {
     int italic = pt->pen.attrs.italic = cell->attrs.italic;
     flush_pending(pt);
-    ADDATTR(pango_attr_style_new(italic ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL));
+    if (pt->font_italic != NULL) {
+        char *font = italic ? pt->font_italic : pt->fonts[0];
+        ADDATTR(pango_attr_family_new(font));
+    } else {
+        ADDATTR(pango_attr_style_new(italic ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL));
+    }
   }
 
   if(cell->attrs.reverse != pt->pen.attrs.reverse) {
@@ -862,14 +876,6 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     int strike = pt->pen.attrs.strike = cell->attrs.strike;
     flush_pending(pt);
     ADDATTR(pango_attr_strikethrough_new(strike));
-  }
-
-  if(cell->attrs.font != pt->pen.attrs.font) {
-    int font = pt->pen.attrs.font = cell->attrs.font;
-    if(font >= pt->n_fonts)
-      font = 0;
-    flush_pending(pt);
-    ADDATTR(pango_attr_family_new(pt->fonts[font]));
   }
 
   if(cell->attrs.dwl != pt->pen.attrs.dwl ||
@@ -2098,7 +2104,7 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_
   }
 }
 
-void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
+void pangoterm_set_fonts(PangoTerm *pt, char *font, char *font_italic, char **alt_fonts)
 {
   int n_fonts = 1;
   while(alt_fonts[n_fonts-1])
@@ -2107,6 +2113,13 @@ void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts)
   g_strfreev(pt->fonts);
 
   pt->n_fonts = n_fonts;
+
+  if (font_italic && strlen(font_italic) != 0) {
+      pt->font_italic = g_strdup(font_italic);
+  } else {
+      pt->font_italic = NULL;
+  }
+
 
   pt->fonts = malloc(sizeof(char*) * (n_fonts + 1));
   pt->fonts[0] = g_strdup(font);
