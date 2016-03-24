@@ -10,6 +10,8 @@ typedef struct PangoTerm PangoTerm;
 PangoTerm *pangoterm_new(int rows, int cols);
 void pangoterm_free(PangoTerm *pt);
 
+unsigned long pangoterm_get_xid(PangoTerm *pt);
+
 void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col);
 void pangoterm_set_font_size(PangoTerm *pt, double size);
 void pangoterm_set_fonts(PangoTerm *pt, char *font, char **alt_fonts); // ptr not value
