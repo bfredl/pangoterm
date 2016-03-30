@@ -1674,7 +1674,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     store_clipboard(pt);
   }
 
-  return FALSE;
+  return TRUE;
 }
 
 static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
