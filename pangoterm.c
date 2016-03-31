@@ -205,6 +205,8 @@ struct PangoTerm {
 
   GtkClipboard *selection_primary;
   GtkClipboard *selection_clipboard;
+
+  bool did_set_font_size;
 };
 
 /*
@@ -1703,7 +1705,18 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
     .prow = (event->y - CONF_border) / pt->cell_height,
   };
 
-  if(pt->mousemode && !(event->state & GDK_SHIFT_MASK)) {
+  if(!(~event->state & (GDK_SHIFT_MASK|GDK_CONTROL_MASK))) {
+    switch(event->direction) {
+      case GDK_SCROLL_UP:
+          pangoterm_set_fontsize(pt, pt->font_size+1);
+          break;
+      case GDK_SCROLL_DOWN:
+          pangoterm_set_fontsize(pt, pt->font_size-1);
+          break;
+      default:
+                             return FALSE;
+    }
+  } else if(pt->mousemode && !(event->state & GDK_SHIFT_MASK)) {
     VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
     if(pos.row < 0 || pos.row >= pt->rows)
       return TRUE;
@@ -1783,28 +1796,30 @@ static void widget_resize(GtkContainer* widget, gpointer user_data)
   raw_width  -= 2 * CONF_border;
   raw_height -= 2 * CONF_border;
 
-  int cols = raw_width  / pt->cell_width;
-  int rows = raw_height / pt->cell_height;
+  if (!pt->did_set_font_size) {
+    int cols = raw_width  / pt->cell_width;
+    int rows = raw_height / pt->cell_height;
 
-  if(cols == pt->cols && rows == pt->rows)
-    return;
+    if(cols == pt->cols && rows == pt->rows)
+      return;
 
-  // Clamp to a minimum 1x1 size because libvterm doesn't like zero
-  if(!cols)
-    cols = 1;
-  if(!rows)
-    rows = 1;
+    // Clamp to a minimum 1x1 size because libvterm doesn't like zero
+    if(!cols)
+      cols = 1;
+    if(!rows)
+      rows = 1;
 
-  pt->cols = cols;
-  pt->rows = rows;
+    pt->cols = cols;
+    pt->rows = rows;
+  }
 
   if(pt->resizedfn)
-    (*pt->resizedfn)(rows, cols, pt->resizedfn_data);
+    (*pt->resizedfn)(pt->rows, pt->cols, pt->resizedfn_data);
 
   cairo_surface_t* new_buffer = gdk_window_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
-      cols * pt->cell_width,
-      rows * pt->cell_height);
+      pt->cols * pt->cell_width,
+      pt->rows * pt->cell_height);
 
   cairo_t* gc = cairo_create(new_buffer);
   cairo_set_source_surface(gc, pt->buffer, 0, 0);
@@ -1813,9 +1828,21 @@ static void widget_resize(GtkContainer* widget, gpointer user_data)
 
   cairo_surface_destroy(pt->buffer);
   pt->buffer = new_buffer;
+  if (pt->did_set_font_size) {
+    pt->did_set_font_size = false;
 
-  vterm_set_size(pt->vt, rows, cols);
-  vterm_screen_flush_damage(pt->vts);
+    VTermRect rect = {
+      .start_col = 0,
+      .end_col   = pt->cols,
+      .start_row = 0,
+      .end_row   = pt->rows,
+    };
+
+    repaint_rect(pt, rect);
+  } else {
+    vterm_set_size(pt->vt, pt->rows, pt->cols);
+    vterm_screen_flush_damage(pt->vts);
+  }
 
   return;
 }
@@ -2082,10 +2109,7 @@ void pangoterm_set_resized_fn(PangoTerm *pt, PangoTermResizedFn *fn, void *user)
   pt->resizedfn_data = user;
 }
 
-void pangoterm_start(PangoTerm *pt)
-{
-  /* Finish the rest of the setup and start */
-
+void pangoterm_init_font(PangoTerm *pt) {
   cairo_t *cctx = gdk_cairo_create(pt->termdraw);
   PangoContext *pctx = pango_cairo_create_context(cctx);
 
@@ -2111,6 +2135,22 @@ void pangoterm_start(PangoTerm *pt)
   pt->cell_width_pango = width;
   pt->cell_width  = PANGO_PIXELS_CEIL(width);
   pt->cell_height = PANGO_PIXELS_CEIL(height);
+}
+
+void pangoterm_set_fontsize(PangoTerm* pt, double font_size) {
+  pt->font_size = font_size;
+  pangoterm_init_font(pt);
+  pt->did_set_font_size = true;
+  gtk_window_resize(GTK_WINDOW(pt->termwin),
+      pt->cols * pt->cell_width, pt->rows * pt->cell_height);
+}
+
+void pangoterm_start(PangoTerm *pt)
+{
+  /* Finish the rest of the setup and start */
+
+
+  pangoterm_init_font(pt);
 
   GdkColor fg_col = { 0xffff * 0.90, 0xffff * 0.90, 0xffff * 0.90 };
   gdk_color_parse(CONF_foreground, &fg_col);
