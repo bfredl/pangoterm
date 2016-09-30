@@ -1379,7 +1379,9 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
      ((event->keyval == 'v' || event->keyval == 'V') &&
       event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
-    gchar *str = gtk_clipboard_wait_for_text(pt->selection_clipboard);
+    gchar *str = gtk_clipboard_wait_for_text(event->keyval == GDK_KEY_Insert
+                                             ? pt->selection_primary
+                                             : pt->selection_clipboard);
     if(!str)
       return TRUE;
 
