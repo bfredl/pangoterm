@@ -301,7 +301,7 @@ static VTermModifier convert_modifier(int state)
   if(state & GDK_MOD1_MASK)
     mod |= VTERM_MOD_ALT;
 
-    return mod;
+  return mod;
 }
 
 static void term_flush_output(PangoTerm *pt)
