@@ -5,6 +5,9 @@
 #if defined(__NetBSD__)
 # define _NETBSD_SOURCE
 #endif
+
+#define _DEFAULT_SOURCE
+/* _BSD_SOURCE is deprecated, replaced with _DEFAULT_SOURCE. */
 #define _BSD_SOURCE
 
 #include <errno.h>

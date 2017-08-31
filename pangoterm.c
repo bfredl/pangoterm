@@ -5,7 +5,7 @@
 
 #include <cairo/cairo.h>
 #include <gtk/gtk.h>
-#include <gdk/gdkkeys.h>
+#include <gdk/gdk.h>
 #include <gdk/gdkkeysyms.h>
 
 #include "conf.h"
@@ -183,7 +183,7 @@ struct PangoTerm {
   GtkWidget *termwin;
 
   cairo_surface_t *buffer;
-  GdkDrawable *termdraw;
+  GdkWindow *termdraw;
   /* area in buffer that needs flushing to termdraw */
   GdkRectangle dirty_area;
 
@@ -1189,7 +1189,7 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     break;
 
   case VTERM_PROP_ICONNAME:
-    gdk_window_set_icon_name(GDK_WINDOW(pt->termwin->window), val->string);
+    gdk_window_set_icon_name(GDK_WINDOW(gtk_widget_get_window(pt->termwin)), val->string);
     break;
 
   case VTERM_PROP_TITLE:
@@ -1789,7 +1789,7 @@ static void widget_quit(GtkContainer* widget, gpointer unused_data)
 
 static GdkPixbuf *load_icon(GdkColor *background)
 {
-  /* This technique stolen from 
+  /* This technique stolen from
    *   http://git.gnome.org/browse/gtk+/tree/gtk/gtkicontheme.c#n3180
    *
    *   Updated because rsvg no longer supports loading file: URL scheme, only
@@ -1884,32 +1884,32 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gtk_widget_realize(pt->termwin);
 
-  pt->termdraw = pt->termwin->window;
+  pt->termdraw = gtk_widget_get_window(pt->termwin);
 
   gdk_window_set_cursor(GDK_WINDOW(pt->termdraw), gdk_cursor_new(GDK_XTERM));
 
   cursor_start_blinking(pt);
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
-  GdkEventMask mask = gdk_window_get_events(pt->termwin->window);
-  gdk_window_set_events(pt->termwin->window, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK);
+  GdkEventMask mask = gdk_window_get_events(pt->termdraw);
+  gdk_window_set_events(pt->termdraw, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK);
 
-  g_signal_connect(G_OBJECT(pt->termwin), "expose-event", GTK_SIGNAL_FUNC(widget_expose), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", GTK_SIGNAL_FUNC(widget_keypress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   GTK_SIGNAL_FUNC(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", GTK_SIGNAL_FUNC(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  GTK_SIGNAL_FUNC(widget_mousemove), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  GTK_SIGNAL_FUNC(widget_scroll), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  GTK_SIGNAL_FUNC(widget_focus_in),  pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", GTK_SIGNAL_FUNC(widget_focus_out), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "destroy", GTK_SIGNAL_FUNC(widget_quit), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "expose-event", G_CALLBACK(widget_expose), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", G_CALLBACK(widget_keypress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  G_CALLBACK(widget_mousemove), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", G_CALLBACK(widget_focus_out), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
 
   pt->im_context = gtk_im_multicontext_new();
   GdkWindow *gdkwin = gtk_widget_get_window(GTK_WIDGET(pt->termwin));
   gtk_im_context_set_client_window(pt->im_context, gdkwin);
 
-  g_signal_connect(G_OBJECT(pt->im_context), "commit", GTK_SIGNAL_FUNC(widget_im_commit), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", GTK_SIGNAL_FUNC(widget_resize), pt);
+  g_signal_connect(G_OBJECT(pt->im_context), "commit", G_CALLBACK(widget_im_commit), pt);
+  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", G_CALLBACK(widget_resize), pt);
 
   pt->dragging = NO_DRAG;
 
@@ -1938,9 +1938,13 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_
       &VTERM_COLOR_FROM_GDK_COLOR(*fg_col),
       &VTERM_COLOR_FROM_GDK_COLOR(*bg_col));
 
+  /* TODO: Do the equivalent using raw Xlib calls when using X backend,
+   * as basically all these calls are deprecated. */
+  /*
   GdkColormap* colormap = gdk_colormap_get_system();
   gdk_rgb_find_color(colormap, bg_col);
   gdk_window_set_background(pt->termdraw, bg_col);
+  */
 
   GdkPixbuf *icon = load_icon(bg_col);
   if(icon) {

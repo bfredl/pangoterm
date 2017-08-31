@@ -8,7 +8,7 @@ ifneq ($(VERBOSE),1)
     LIBTOOL +=--quiet
 endif
 
-CFLAGS  +=-Wall -Iinclude -std=c99
+CFLAGS  +=-Wall -Iinclude -std=c99 -DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED -DGSEAL_ENABLE -DGTK_DISABLE_SINGLE_INCLUDES
 LDFLAGS +=-lutil
 
 ifeq ($(DEBUG),1)
