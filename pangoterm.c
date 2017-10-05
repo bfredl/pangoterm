@@ -1761,6 +1761,9 @@ static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer us
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
 
+  VTermState *state = vterm_obtain_state(pt->vt);
+  vterm_state_focus_in(state);
+
   if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
 
@@ -1773,6 +1776,9 @@ static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer u
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
+
+  VTermState *state = vterm_obtain_state(pt->vt);
+  vterm_state_focus_out(state);
 
   if(CURSOR_ENABLED(pt)) {
     repaint_cell(pt, pt->cursorpos);
