@@ -14,6 +14,8 @@ CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
 CONF_STRING(background, 0, "black",  "Background colour", "COL");
 CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
 
+CONF_INT(border, 0, 2, "Border width", "PIXELS");
+
 static struct {
   GdkColor col;
   gboolean is_set;
@@ -535,7 +537,7 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
   gdk_cairo_rectangle(gc, area);
   cairo_clip(gc);
   /* clip rectangle will solve this efficiently */
-  cairo_set_source_surface(gc, pt->buffer, 0, 0);
+  cairo_set_source_surface(gc, pt->buffer, CONF_border, CONF_border);
   cairo_paint(gc);
 
   if(pt->scroll_offs) {
@@ -553,8 +555,8 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
     cairo_save(gc);
 
     GdkRectangle rect = {
-      .x = pt->cols * pt->cell_width - CONF_scrollbar_width,
-      .y = 0,
+      .x = CONF_border + pt->cols * pt->cell_width - CONF_scrollbar_width,
+      .y = CONF_border + 0,
       .width = CONF_scrollbar_width,
       .height = whole_height,
     };
@@ -568,7 +570,7 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
     cairo_paint(gc);
 
     rect.height = pixels_tall;
-    rect.y = whole_height - pixels_tall - pixels_from_bottom;
+    rect.y = CONF_border + whole_height - pixels_tall - pixels_from_bottom;
     gdk_cairo_rectangle(gc, &rect);
     cairo_clip(gc);
     cairo_set_source_rgba(gc,
@@ -589,7 +591,12 @@ static void blit_dirty(PangoTerm *pt)
   if(!pt->dirty_area.height || !pt->dirty_area.width)
     return;
 
-  blit_buffer(pt, &pt->dirty_area);
+  blit_buffer(pt, &(GdkRectangle){
+      .x      = pt->dirty_area.x + CONF_border,
+      .y      = pt->dirty_area.y + CONF_border,
+      .width  = pt->dirty_area.width,
+      .height = pt->dirty_area.height,
+  });
 
   pt->dirty_area.width  = 0;
   pt->dirty_area.height = 0;
@@ -1158,7 +1165,13 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
   cairo_paint(gc);
 
   cairo_destroy(gc);
-  blit_buffer(pt, &destarea);
+
+  blit_buffer(pt, &(GdkRectangle){
+      .x      = destarea.x + CONF_border,
+      .y      = destarea.y + CONF_border,
+      .width  = destarea.width,
+      .height = destarea.height,
+  });
 
   return 1;
 }
@@ -1325,8 +1338,8 @@ static void vscroll_delta(PangoTerm *pt, int delta)
   flush_pending(pt);
 
   GdkRectangle whole_screen = {
-    .x = 0,
-    .y = 0,
+    .x = CONF_border,
+    .y = CONF_border,
     .width  = pt->cols * pt->cell_width,
     .height = pt->rows * pt->cell_height,
   };
@@ -1464,8 +1477,8 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   PangoTerm *pt = user_data;
 
   PhyPos ph_pos = {
-    .pcol = event->x / pt->cell_width,
-    .prow = event->y / pt->cell_height,
+    .pcol = (event->x - CONF_border) / pt->cell_width,
+    .prow = (event->y - CONF_border) / pt->cell_height,
   };
 
   /* If the mouse is being dragged, we'll get motion events even outside our
@@ -1577,8 +1590,8 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
   PangoTerm *pt = user_data;
 
   PhyPos ph_pos = {
-    .pcol = event->x / pt->cell_width,
-    .prow = event->y / pt->cell_height,
+    .pcol = (event->x - CONF_border) / pt->cell_width,
+    .prow = (event->y - CONF_border) / pt->cell_height,
   };
 
   /* If the mouse is being dragged, we'll get motion events even outside our
@@ -1652,8 +1665,8 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
   PangoTerm *pt = user_data;
 
   PhyPos ph_pos = {
-    .pcol = event->x / pt->cell_width,
-    .prow = event->y / pt->cell_height,
+    .pcol = (event->x - CONF_border) / pt->cell_width,
+    .prow = (event->y - CONF_border) / pt->cell_height,
   };
 
   if(pt->mousemode && !(event->state & GDK_SHIFT_MASK)) {
@@ -1708,8 +1721,8 @@ static gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer
   /* GDK always sends resize events before expose events, so it's possible this
    * expose event is for a region that now doesn't exist.
    */
-  int right  = pt->cols * pt->cell_width;
-  int bottom = pt->rows * pt->cell_height;
+  int right  = CONF_border + pt->cols * pt->cell_width;
+  int bottom = CONF_border + pt->rows * pt->cell_height;
 
   /* Trim to still-valid area, or ignore if there's nothing remaining */
   if(event->area.x + event->area.width > right)
@@ -1729,6 +1742,9 @@ static void widget_resize(GtkContainer* widget, gpointer user_data)
 
   gint raw_width, raw_height;
   gtk_window_get_size(GTK_WINDOW(widget), &raw_width, &raw_height);
+
+  raw_width  -= 2 * CONF_border;
+  raw_height -= 2 * CONF_border;
 
   int cols = raw_width  / pt->cell_width;
   int rows = raw_height / pt->cell_height;
@@ -2056,7 +2072,8 @@ void pangoterm_start(PangoTerm *pt)
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
   gtk_window_resize(GTK_WINDOW(pt->termwin),
-      pt->cols * pt->cell_width, pt->rows * pt->cell_height);
+      pt->cols * pt->cell_width  + 2 * CONF_border,
+      pt->rows * pt->cell_height + 2 * CONF_border);
 
   pt->buffer = gdk_window_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
@@ -2065,8 +2082,8 @@ void pangoterm_start(PangoTerm *pt)
 
   GdkGeometry hints;
 
-  hints.min_width  = pt->cell_width;
-  hints.min_height = pt->cell_height;
+  hints.min_width  = pt->cell_width  + 2 * CONF_border;
+  hints.min_height = pt->cell_height + 2 * CONF_border;
   hints.width_inc  = pt->cell_width;
   hints.height_inc = pt->cell_height;
 
