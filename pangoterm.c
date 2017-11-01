@@ -1898,6 +1898,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   pt->termwin = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_widget_set_double_buffered(pt->termwin, FALSE);
+  gtk_widget_modify_bg(pt->termwin, GTK_STATE_NORMAL, &pt->bg_col);
 
   pt->glyphs = g_string_sized_new(128);
   pt->glyph_widths = g_array_new(FALSE, FALSE, sizeof(int));
