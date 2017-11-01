@@ -536,13 +536,47 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
   cairo_t* gc = gdk_cairo_create(pt->termdraw);
   gdk_cairo_rectangle(gc, area);
   cairo_clip(gc);
-  /* clip rectangle will solve this efficiently */
-  cairo_set_source_surface(gc, pt->buffer, CONF_border, CONF_border);
-  cairo_paint(gc);
 
-  if(pt->scroll_offs) {
-    int whole_height = pt->rows * pt->cell_height;
+  int whole_width = 2 * CONF_border + pt->cols * pt->cell_width;
+  bool scrollbar = (area->x + area->width) > (whole_width - CONF_scrollbar_width);
 
+  int whole_height;
+  GdkRectangle scrollbar_area;
+
+  if(scrollbar) {
+    /* Erase old scrollbar */
+    whole_height = pt->rows * pt->cell_height + 2 * CONF_border;
+    scrollbar_area = (GdkRectangle){
+        .x = whole_width - CONF_scrollbar_width,
+        .y = 0,
+        .width = CONF_scrollbar_width,
+        .height = whole_height,
+    };
+
+    cairo_save(gc);
+
+    gdk_cairo_rectangle(gc, &scrollbar_area);
+    cairo_clip(gc);
+    cairo_set_source_rgb(gc,
+        pt->bg_col.red   / 65535.0,
+        pt->bg_col.green / 65535.0,
+        pt->bg_col.blue  / 65535.0);
+    cairo_paint(gc);
+
+    cairo_restore(gc);
+  }
+
+  {
+    cairo_save(gc);
+
+    /* clip rectangle will solve this efficiently */
+    cairo_set_source_surface(gc, pt->buffer, CONF_border, CONF_border);
+    cairo_paint(gc);
+
+    cairo_restore(gc);
+  }
+
+  if(scrollbar && pt->scroll_offs) {
     /* Map the whole pt->rows + pt->scrollback_current extent onto the entire
      * height of the window, and draw a brighter rectangle to represent the
      * part currently visible
@@ -554,13 +588,7 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
 
     cairo_save(gc);
 
-    GdkRectangle rect = {
-      .x = CONF_border + pt->cols * pt->cell_width - CONF_scrollbar_width,
-      .y = CONF_border + 0,
-      .width = CONF_scrollbar_width,
-      .height = whole_height,
-    };
-    gdk_cairo_rectangle(gc, &rect);
+    gdk_cairo_rectangle(gc, &scrollbar_area);
     cairo_clip(gc);
     cairo_set_source_rgba(gc,
         pt->fg_col.red   / 65535.0,
@@ -569,9 +597,9 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
         0.3);
     cairo_paint(gc);
 
-    rect.height = pixels_tall;
-    rect.y = CONF_border + whole_height - pixels_tall - pixels_from_bottom;
-    gdk_cairo_rectangle(gc, &rect);
+    scrollbar_area.height = pixels_tall;
+    scrollbar_area.y = whole_height - pixels_tall - pixels_from_bottom;
+    gdk_cairo_rectangle(gc, &scrollbar_area);
     cairo_clip(gc);
     cairo_set_source_rgba(gc,
         pt->fg_col.red   / 65535.0,
@@ -1338,10 +1366,10 @@ static void vscroll_delta(PangoTerm *pt, int delta)
   flush_pending(pt);
 
   GdkRectangle whole_screen = {
-    .x = CONF_border,
-    .y = CONF_border,
-    .width  = pt->cols * pt->cell_width,
-    .height = pt->rows * pt->cell_height,
+    .x = 0,
+    .y = 0,
+    .width  = pt->cols * pt->cell_width  + 2 * CONF_border,
+    .height = pt->rows * pt->cell_height + 2 * CONF_border,
   };
   blit_buffer(pt, &whole_screen);
 }
@@ -1721,8 +1749,8 @@ static gboolean widget_expose(GtkWidget *widget, GdkEventExpose *event, gpointer
   /* GDK always sends resize events before expose events, so it's possible this
    * expose event is for a region that now doesn't exist.
    */
-  int right  = CONF_border + pt->cols * pt->cell_width;
-  int bottom = CONF_border + pt->rows * pt->cell_height;
+  int right  = 2 * CONF_border + pt->cols * pt->cell_width;
+  int bottom = 2 * CONF_border + pt->rows * pt->cell_height;
 
   /* Trim to still-valid area, or ignore if there's nothing remaining */
   if(event->area.x + event->area.width > right)
