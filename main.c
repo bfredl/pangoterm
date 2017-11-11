@@ -37,7 +37,7 @@
 
 CONF_STRING(font, 0,   "DejaVu Sans Mono", "Font name", "STR");
 
-CONF_STRING(title, 0, "pangoterm", "Title", "STR");
+CONF_STRING(title, 'T', "pangoterm", "Title", "STR");
 
 CONF_INT(lines, 0, 25, "Number of lines",   "NUM");
 CONF_INT(cols,  0, 80, "Number of columns", "NUM");
