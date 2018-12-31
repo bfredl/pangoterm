@@ -7,6 +7,7 @@
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 #include <gdk/gdkkeysyms.h>
+#include <gdk/gdkx.h>
 
 #include "conf.h"
 
@@ -1998,6 +1999,12 @@ void pangoterm_free(PangoTerm *pt)
   g_strfreev(pt->fonts);
 
   vterm_free(pt->vt);
+}
+
+guint32 pangoterm_get_windowid(PangoTerm *pt)
+{
+  /* TODO: return 0 when not on X11 */
+  return GDK_DRAWABLE_XID(gtk_widget_get_window(GTK_WIDGET(pt->termwin)));
 }
 
 void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col)

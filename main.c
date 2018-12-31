@@ -213,6 +213,15 @@ int main(int argc, char *argv[])
     putenv(term);
     /* Do not free 'term', it is part of the environment */
 
+    {
+      guint32 windowid = pangoterm_get_windowid(pt);
+      if(windowid) {
+        gchar *envstr = g_strdup_printf("WINDOWID=%d", pangoterm_get_windowid(pt));
+        putenv(envstr);
+        /* Do not free 'envstr', it is part of the environment */
+      }
+    }
+
     if(argc > 1) {
       execvp(argv[1], argv + 1);
       fprintf(stderr_save, "Cannot exec(%s) - %s\n", argv[1], strerror(errno));
