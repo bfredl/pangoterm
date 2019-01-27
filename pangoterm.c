@@ -205,6 +205,8 @@ struct PangoTerm {
 
   GtkClipboard *selection_primary;
   GtkClipboard *selection_clipboard;
+
+  GString *outbuffer;
 };
 
 /*
@@ -307,14 +309,19 @@ static VTermModifier convert_modifier(int state)
   return mod;
 }
 
-static void term_flush_output(PangoTerm *pt)
+static void flush_outbuffer(PangoTerm *pt)
 {
-  size_t bufflen = vterm_output_get_buffer_current(pt->vt);
-  if(bufflen) {
-    char buffer[bufflen];
-    bufflen = vterm_output_read(pt->vt, buffer, bufflen);
-    (*pt->writefn)(buffer, bufflen, pt->writefn_data);
+  if(pt->outbuffer->len) {
+    (*pt->writefn)(pt->outbuffer->str, pt->outbuffer->len, pt->writefn_data);
+    pt->outbuffer->len = 0;
   }
+}
+
+static void term_output(const char *s, size_t len, void *user)
+{
+  PangoTerm *pt = user;
+
+  g_string_append_len(pt->outbuffer, s, len);
 }
 
 static void term_push_string(PangoTerm *pt, gchar *str, gboolean paste)
@@ -323,10 +330,6 @@ static void term_push_string(PangoTerm *pt, gchar *str, gboolean paste)
     vterm_keyboard_start_paste(pt->vt);
 
   while(str && str[0]) {
-    /* 6 bytes is always enough for any UTF-8 character */
-    if(vterm_output_get_buffer_remaining(pt->vt) < 6)
-      term_flush_output(pt);
-
     vterm_keyboard_unichar(pt->vt, g_utf8_get_char(str), 0);
     str = g_utf8_next_char(str);
   }
@@ -334,7 +337,7 @@ static void term_push_string(PangoTerm *pt, gchar *str, gboolean paste)
   if(paste)
     vterm_keyboard_end_paste(pt->vt);
 
-  term_flush_output(pt);
+  flush_outbuffer(pt);
 }
 
 static void pos_next(PangoTerm *pt, VTermPos *pos)
@@ -1301,7 +1304,7 @@ static void altscreen_scroll(PangoTerm *pt, int delta, GtkOrientation orientatio
     for(int i=0; i < ((delta <= -1) ? -delta : delta); i++) {
       vterm_keyboard_key(pt->vt, which_arrow, 0);
     }
-    term_flush_output(pt);
+    flush_outbuffer(pt);
   }
 }
 
@@ -1505,7 +1508,7 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
   if(CONF_unscroll_on_key && pt->scroll_offs)
     vscroll_delta(pt, -pt->scroll_offs);
 
-  term_flush_output(pt);
+  flush_outbuffer(pt);
 
   return FALSE;
 }
@@ -1548,7 +1551,7 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
     }
     vterm_mouse_move(pt->vt, pos.row, pos.col, state);
     vterm_mouse_button(pt->vt, event->button, is_press, state);
-    term_flush_output(pt);
+    flush_outbuffer(pt);
   }
   else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
     /* Middle-click pastes primary selection */
@@ -1656,7 +1659,7 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
       return TRUE;
     VTermModifier state = convert_modifier(event->state);
     vterm_mouse_move(pt->vt, pos.row, pos.col, state);
-    term_flush_output(pt);
+    flush_outbuffer(pt);
   }
   else if(event->state & GDK_BUTTON1_MASK) {
     VTermPos old_pos = pt->dragging == DRAGGING ? pt->drag_pos : pt->drag_start;
@@ -1731,7 +1734,7 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
 
     vterm_mouse_move(pt->vt, pos.row, pos.col, state);
     vterm_mouse_button(pt->vt, button, 1, state);
-    term_flush_output(pt);
+    flush_outbuffer(pt);
   }
   else {
     switch(event->direction) {
@@ -2002,6 +2005,10 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->scroll_size = CONF_scrollback_size;
   pt->sb_buffer = g_new0(PangoTermScrollbackLine*, pt->scroll_size);
 
+  pt->outbuffer = g_string_sized_new(256);
+
+  vterm_output_set_callback(pt->vt, term_output, pt);
+
   return pt;
 }
 
@@ -2176,5 +2183,5 @@ void pangoterm_end_update(PangoTerm *pt)
 
   flush_pending(pt);
   blit_dirty(pt);
-  term_flush_output(pt);
+  flush_outbuffer(pt);
 }
