@@ -795,9 +795,20 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
   if(cell->attrs.underline != pt->pen.attrs.underline) {
     int underline = pt->pen.attrs.underline = cell->attrs.underline;
     flush_pending(pt);
-    ADDATTR(pango_attr_underline_new(underline == 1 ? PANGO_UNDERLINE_SINGLE :
-                                     underline == 2 ? PANGO_UNDERLINE_DOUBLE :
-                                                      PANGO_UNDERLINE_NONE));
+    switch(underline) {
+      case VTERM_UNDERLINE_OFF:
+        ADDATTR(pango_attr_underline_new(PANGO_UNDERLINE_NONE));
+        break;
+      case VTERM_UNDERLINE_DOUBLE:
+        ADDATTR(pango_attr_underline_new(PANGO_UNDERLINE_DOUBLE));
+        break;
+      case VTERM_UNDERLINE_CURLY:
+        /* PANGO_UNDERLINE_ERROR is usually rendered with a wavy shape */
+        ADDATTR(pango_attr_underline_new(PANGO_UNDERLINE_ERROR));
+        break;
+      default:
+        ADDATTR(pango_attr_underline_new(PANGO_UNDERLINE_SINGLE));
+    }
   }
 
   if(cell->attrs.italic != pt->pen.attrs.italic) {
