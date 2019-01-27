@@ -20,8 +20,10 @@ ifeq ($(PROFILE),1)
   LDFLAGS+=-pg
 endif
 
-CFLAGS  +=$(shell pkg-config --cflags vterm)
-LDFLAGS +=$(shell pkg-config --libs   vterm)
+#CFLAGS  +=$(shell pkg-config --cflags vterm)
+#LDFLAGS +=$(shell pkg-config --libs   vterm)
+CFLAGS += -I../libvterm/include/
+LDFLAGS += ../libvterm/.libs/libvterm.a
 
 CFLAGS  +=$(shell pkg-config --cflags gtk+-3.0)
 LDFLAGS +=$(shell pkg-config --libs   gtk+-3.0)
