@@ -213,6 +213,8 @@ int main(int argc, char *argv[])
     putenv(term);
     /* Do not free 'term', it is part of the environment */
 
+    putenv("COLORTERM=truecolor");
+
     {
       guint32 windowid = pangoterm_get_windowid(pt);
       if(windowid) {
