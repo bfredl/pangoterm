@@ -11,6 +11,8 @@
 
 #include "conf.h"
 
+#undef DEBUG_SHOW_LINECONTINUATION
+
 CONF_STRING(foreground, 0, "gray90", "Foreground colour", "COL");
 CONF_STRING(background, 0, "black",  "Background colour", "COL");
 CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
@@ -614,6 +616,36 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
 
     cairo_restore(gc);
   }
+
+#ifdef DEBUG_SHOW_LINECONTINUATION
+  {
+    cairo_save(gc);
+
+    cairo_set_source_rgba(gc,
+        0.0, 1.0, 0.0,
+        0.6);
+
+    VTermState *state = vterm_obtain_state(pt->vt);
+
+    PhyPos ph_pos = { .pcol = pt->cols - 1 };
+    for(ph_pos.prow = 1; ph_pos.prow < pt->rows; ph_pos.prow++) {
+      VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
+      if(pos.row < 1)
+        continue;
+
+      const VTermLineInfo *lineinfo = vterm_state_get_lineinfo(state, pos.row + 1);
+      if(!lineinfo->continuation)
+        continue;
+
+      GdkRectangle rect = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, 1);
+      cairo_rectangle(gc,
+          rect.x + 1, rect.y + 2, rect.width - 2, rect.height - 4);
+      cairo_fill(gc);
+    }
+
+    cairo_restore(gc);
+  }
+#endif
 
   cairo_destroy(gc);
 }
