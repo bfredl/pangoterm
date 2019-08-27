@@ -211,6 +211,7 @@ struct PangoTerm {
 
   GString *outbuffer;
   GString *tmpbuffer; /* for handling VTermStringFragment */
+  bool did_set_font_size;
 };
 
 /*
