@@ -2187,7 +2187,6 @@ void pangoterm_init_font(PangoTerm *pt) {
     pango_font_description_set_size(fontdesc, pt->font_size * PANGO_SCALE);
 
   pango_context_set_font_description(pctx, fontdesc);
-  pango_context_set_round_glyph_positions(pctx, FALSE);
   pango_cairo_context_set_resolution(pctx, gdk_screen_get_resolution(gdk_screen_get_default()));
 
   pt->pen.pangoattrs = pango_attr_list_new();
