@@ -2201,8 +2201,8 @@ void pangoterm_init_font(PangoTerm *pt) {
 
   int height = pango_font_metrics_get_ascent(metrics) + pango_font_metrics_get_descent(metrics);
 
-  pt->cell_width_pango = width;
   pt->cell_width  = PANGO_PIXELS_CEIL(width);
+  pt->cell_width_pango = PANGO_SCALE*pt->cell_width;
   pt->cell_height = PANGO_PIXELS_CEIL(height);
 }
 
