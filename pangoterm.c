@@ -209,6 +209,7 @@ struct PangoTerm {
   GtkClipboard *selection_clipboard;
 
   GString *outbuffer;
+  GString *tmpbuffer; /* for handling VTermStringFragment */
 };
 
 /*
@@ -1267,6 +1268,18 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
 {
   PangoTerm *pt = user_data;
 
+  if(vterm_get_prop_type(prop) == VTERM_VALUETYPE_STRING) {
+    /* Compose the string fragments into pt->tmpbuffer
+     * We assume we won't see multiple fragments of different strings intermingled */
+    if(val->string.initial)
+      pt->tmpbuffer->len = 0;
+
+    g_string_append_len(pt->tmpbuffer, val->string.str, val->string.len);
+
+    if(!val->string.final)
+      return 1;
+  }
+
   switch(prop) {
   case VTERM_PROP_CURSORVISIBLE:
     pt->cursor_visible = val->boolean;
@@ -1284,11 +1297,11 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     break;
 
   case VTERM_PROP_ICONNAME:
-    gdk_window_set_icon_name(GDK_WINDOW(gtk_widget_get_window(pt->termwin)), val->string);
+    gdk_window_set_icon_name(GDK_WINDOW(gtk_widget_get_window(pt->termwin)), pt->tmpbuffer->str);
     break;
 
   case VTERM_PROP_TITLE:
-    gtk_window_set_title(GTK_WINDOW(pt->termwin), val->string);
+    gtk_window_set_title(GTK_WINDOW(pt->termwin), pt->tmpbuffer->str);
     break;
 
   case VTERM_PROP_ALTSCREEN:
@@ -2038,6 +2051,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->sb_buffer = g_new0(PangoTermScrollbackLine*, pt->scroll_size);
 
   pt->outbuffer = g_string_sized_new(256);
+  pt->tmpbuffer = g_string_sized_new(256);
 
   vterm_output_set_callback(pt->vt, term_output, pt);
 
