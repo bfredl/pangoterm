@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
 {
   VTERM_CHECK_VERSION;
 
-  //setenv("GDK_BACKEND", "x11", TRUE);
+  setenv("GDK_BACKEND", "x11", TRUE);
   if(!conf_parse(&argc, &argv))
     exit(1);
 
