@@ -1447,28 +1447,31 @@ static void vscroll_delta(PangoTerm *pt, int delta)
  * GTK widget event handlers
  */
 
-static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
+static gboolean widget_keypress(GtkEventController *widget,  guint keyval,
+                                guint keycode, GdkModifierType state, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   /* GtkIMContext will eat a Shift-Space and not tell us about shift.
    * Also don't let IME eat any GDK_KEY_KP_ events
    */
-  gboolean ret = (event->state & GDK_SHIFT_MASK && event->keyval == ' ') ? FALSE
-               : (event->keyval >= GDK_KEY_KP_Space && event->keyval <= GDK_KEY_KP_Divide) ? FALSE
+  /*
+  gboolean ret = (state & GDK_SHIFT_MASK && keyval == ' ') ? FALSE
+               : (keyval >= GDK_KEY_KP_Space && keyval <= GDK_KEY_KP_Divide) ? FALSE
                : gtk_im_context_filter_keypress(pt->im_context, event);
 
   if(ret)
     return TRUE;
+  */
 
   // We don't need to track the state of modifier bits
-  if(event->is_modifier)
-    return FALSE;
+  /* if(event->is_modifier)
+    return FALSE; */
 
-  if((event->keyval == GDK_KEY_Insert && event->state & GDK_SHIFT_MASK) ||
-     ((event->keyval == 'v' || event->keyval == 'V') &&
-      event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK)) {
+  if((keyval == GDK_KEY_Insert && state & GDK_SHIFT_MASK) ||
+     ((keyval == 'v' || keyval == 'V') &&
+      state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
-    gchar *str = gtk_clipboard_wait_for_text(event->keyval == GDK_KEY_Insert
+    gchar *str = gtk_clipboard_wait_for_text(keyval == GDK_KEY_Insert
                                              ? pt->selection_primary
                                              : pt->selection_clipboard);
     if(!str)
@@ -1479,8 +1482,8 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     term_push_string(pt, str, TRUE);
     return TRUE;
   }
-  if((event->keyval == 'c' || event->keyval == 'C') &&
-     event->state & GDK_CONTROL_MASK && event->state & GDK_SHIFT_MASK) {
+  if((keyval == 'c' || keyval == 'C') &&
+     state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK) {
     /* Ctrl-Shift-C copies to clipboard */
     if(!pt->highlight_valid)
       return TRUE;
@@ -1495,29 +1498,29 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
     free(text);
     return TRUE;
   }
-  if(event->keyval == GDK_KEY_Page_Down && event->state & GDK_SHIFT_MASK) {
+  if(keyval == GDK_KEY_Page_Down && state & GDK_SHIFT_MASK) {
     vscroll_delta(pt, -pt->rows / 2);
     return TRUE;
   }
-  if(event->keyval == GDK_KEY_Page_Up && event->state & GDK_SHIFT_MASK) {
+  if(keyval == GDK_KEY_Page_Up && state & GDK_SHIFT_MASK) {
     vscroll_delta(pt, +pt->rows / 2);
     return TRUE;
   }
 
-  VTermModifier mod = convert_modifier(event->state);
-  VTermKey keyval = convert_keyval(event->keyval, &mod);
+  VTermModifier mod = convert_modifier(state);
+  VTermKey vterm_keyval = convert_keyval(keyval, &mod);
 
   /*
    * See also
    *   /usr/include/gtk-2.0/gdk/gdkkeysyms.h
    */
 
-  if(keyval) {
+  if(vterm_keyval) {
     /* Shift-Enter and Shift-Backspace are too easy to mistype accidentally
      * Optionally remove shift if it's the only modifier
      */
     if(mod == VTERM_MOD_SHIFT)
-      switch(keyval) {
+      switch(vterm_keyval) {
         case VTERM_KEY_ENTER:
           if(!CONF_chord_shift_enter)
             mod = 0;
@@ -1532,28 +1535,28 @@ static gboolean widget_keypress(GtkWidget *widget, GdkEventKey *event, gpointer 
           break;
       }
 
-    vterm_keyboard_key(pt->vt, keyval, mod);
+    vterm_keyboard_key(pt->vt, vterm_keyval, mod);
   }
-  else if(event->keyval >= 0x10000000) /* Extension key, not printable Unicode */
+  else if(keyval >= 0x10000000) /* Extension key, not printable Unicode */
     return FALSE;
-  else if(event->keyval >= 0x01000000) /* Unicode shifted */
-    vterm_keyboard_unichar(pt->vt, event->keyval - 0x01000000, mod);
-  else if(event->keyval < 0x0f00) {
+  else if(keyval >= 0x01000000) /* Unicode shifted */
+    vterm_keyboard_unichar(pt->vt, keyval - 0x01000000, mod);
+  else if(keyval < 0x0f00) {
     /* GDK key code; convert to Unicode */
-    guint32 unichar = gdk_keyval_to_unicode(event->keyval);
+    guint32 unichar = gdk_keyval_to_unicode(keyval);
     if (unichar == 0)
       return FALSE;
 
     /* Shift-Space is too easy to mistype so optionally ignore that */
-    if(mod == VTERM_MOD_SHIFT && event->keyval == ' ')
+    if(mod == VTERM_MOD_SHIFT && keyval == ' ')
       if(!CONF_chord_shift_space)
         mod = 0;
 
     vterm_keyboard_unichar(pt->vt, unichar, mod);
   }
-  else if(event->keyval >= GDK_KEY_KP_0 && event->keyval <= GDK_KEY_KP_9)
+  else if(keyval >= GDK_KEY_KP_0 && keyval <= GDK_KEY_KP_9)
     /* event->keyval is a keypad number; just treat it as Unicode */
-    vterm_keyboard_unichar(pt->vt, event->keyval - GDK_KEY_KP_0 + '0', mod);
+    vterm_keyboard_unichar(pt->vt, keyval - GDK_KEY_KP_0 + '0', mod);
   else
     return FALSE;
 
@@ -2058,9 +2061,12 @@ PangoTerm *pangoterm_new(int rows, int cols)
   GdkEventMask mask = gdk_window_get_events(pt->termdraw);
   gdk_window_set_events(pt->termdraw, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK|GDK_SCROLL_MASK);
 
+  
+   GtkEventController *key_ev = gtk_event_controller_key_new(pt->termwin);
+
   g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "key-press-event", G_CALLBACK(widget_keypress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "key-release-event", G_CALLBACK(widget_keyrelease), pt);
+  g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
+  // g_signal_connect(G_OBJECT(key_ev), "key-released", G_CALLBACK(widget_keyrelease), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  G_CALLBACK(widget_mousemove), pt);
@@ -2072,6 +2078,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->im_context = gtk_im_multicontext_new();
   gtk_im_context_set_client_window(pt->im_context, pt->termdraw);
   gtk_im_context_set_use_preedit(pt->im_context, false);
+
+  // this is somehow not needed, and NOT inculding it implements shift-space properly???
+  // gtk_event_controller_key_set_im_context(GTK_EVENT_CONTROLLER_KEY(key_ev), pt->im_context);
 
   g_signal_connect(G_OBJECT(pt->im_context), "commit", G_CALLBACK(widget_im_commit), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "check-resize", G_CALLBACK(widget_resize), pt);
