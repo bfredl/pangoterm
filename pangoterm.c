@@ -118,6 +118,9 @@ struct PangoTerm {
 
   GtkIMContext *im_context;
 
+  // TODO: not needed in GTK4 itself!
+  GdkModifierType modifiers;
+
   int mousemode;
 
   GdkRectangle pending_area;
@@ -1447,7 +1450,7 @@ static void vscroll_delta(PangoTerm *pt, int delta)
  * GTK widget event handlers
  */
 
-static gboolean widget_keypress(GtkEventController *widget,  guint keyval,
+static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
                                 guint keycode, GdkModifierType state, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -1574,13 +1577,26 @@ static gboolean widget_keyrelease(GtkWidget *widget, GdkEventKey *event, gpointe
   return gtk_im_context_filter_keypress(pt->im_context, event);
 }
 
-static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
+static gboolean widget_modifiers(GtkEventController *widget, GdkModifierType object, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+  pt->modifiers = object;
+  fprintf(stderr, "RYCK: %d\n", object);
+  return FALSE;
+}
+
+static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
+                                    gdouble y, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
+  const GdkEvent *ev = gtk_gesture_get_last_event(gesture, NULL);
+  // TODO: så jävla bull:
+  const GdkEventButton *event = ev;
+
   PhyPos ph_pos = {
-    .pcol = (event->x - CONF_border) / pt->cell_width,
-    .prow = (event->y - CONF_border) / pt->cell_height,
+    .pcol = (x - CONF_border) / pt->cell_width,
+    .prow = (y - CONF_border) / pt->cell_height,
   };
 
   /* If the mouse is being dragged, we'll get motion events even outside our
@@ -1687,14 +1703,17 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   return TRUE;
 }
 
-static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
+static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdouble y, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
   PhyPos ph_pos = {
-    .pcol = (event->x - CONF_border) / pt->cell_width,
-    .prow = (event->y - CONF_border) / pt->cell_height,
+    .pcol = (x - CONF_border) / pt->cell_width,
+    .prow = (y - CONF_border) / pt->cell_height,
   };
+
+  // GdkModifierType state = gtk_event_controller_get_current_event_state(controller);
+  GdkModifierType state = pt->modifiers;
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
@@ -1709,14 +1728,14 @@ static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpoin
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousemode > VTERM_PROP_MOUSE_CLICK && !(event->state & GDK_SHIFT_MASK) && is_inside) {
+  if(pt->mousemode > VTERM_PROP_MOUSE_CLICK && !(state & GDK_SHIFT_MASK) && is_inside) {
     if(pos.row < 0 || pos.row >= pt->rows)
       return TRUE;
-    VTermModifier state = convert_modifier(event->state);
-    vterm_mouse_move(pt->vt, pos.row, pos.col, state);
+    VTermModifier vterm_state = convert_modifier(state);
+    vterm_mouse_move(pt->vt, pos.row, pos.col, vterm_state);
     flush_outbuffer(pt);
   }
-  else if(event->state & GDK_BUTTON1_MASK) {
+  else if(state & GDK_BUTTON1_MASK) {
     VTermPos old_pos = pt->dragging == DRAGGING ? pt->drag_pos : pt->drag_start;
     if(pos.row == old_pos.row && pos.col == old_pos.col)
       /* Unchanged; stop here */
@@ -2063,13 +2082,15 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   
    GtkEventController *key_ev = gtk_event_controller_key_new(pt->termwin);
+   GtkGesture *button_ev = gtk_gesture_multi_press_new(pt->termwin);
+   GtkEventController *motion_ev = gtk_event_controller_motion_new(pt->termwin);
 
   g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
-  // g_signal_connect(G_OBJECT(key_ev), "key-released", G_CALLBACK(widget_keyrelease), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   G_CALLBACK(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", G_CALLBACK(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  G_CALLBACK(widget_mousemove), pt);
+  g_signal_connect(G_OBJECT(key_ev), "modifiers", G_CALLBACK(widget_modifiers), pt);
+  g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(button_ev), "released", G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(motion_ev), "motion",  G_CALLBACK(widget_mousemove), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", G_CALLBACK(widget_focus_out), pt);
