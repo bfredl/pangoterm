@@ -117,6 +117,7 @@ struct PangoTerm {
   VTermScreen *vts;
 
   GtkIMContext *im_context;
+  GdkModifierType modifiers;
 
   int mousemode;
 
@@ -1462,6 +1463,7 @@ static gboolean widget_keypress(GtkEventController *widget,  guint keyval,
   if(ret)
     return TRUE;
   */
+  fprintf(stderr, "\nKLONK %d %d %d\n", keyval, keycode, state);
 
   // We don't need to track the state of modifier bits
   /* if(event->is_modifier)
@@ -1574,13 +1576,21 @@ static gboolean widget_keyrelease(GtkWidget *widget, GdkEventKey *event, gpointe
   return gtk_im_context_filter_keypress(pt->im_context, event);
 }
 
-static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
+static gboolean widget_modifiers(GtkEventController *widget,  GdkModifierType* object, gpointer user_data)
+{
+  PangoTerm *pt = user_data;
+  pt->modifiers = *object;
+  return FALSE;
+}
+
+static gboolean widget_mouse_common(GtkWidget *widget, gint n_press, gdouble x,
+                                    gdouble y, gpointer user_data, bool is_press)
 {
   PangoTerm *pt = user_data;
 
   PhyPos ph_pos = {
-    .pcol = (event->x - CONF_border) / pt->cell_width,
-    .prow = (event->y - CONF_border) / pt->cell_height,
+    .pcol = (x - CONF_border) / pt->cell_width,
+    .prow = (y - CONF_border) / pt->cell_height,
   };
 
   /* If the mouse is being dragged, we'll get motion events even outside our
@@ -1589,26 +1599,16 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
                    ph_pos.prow >= 0 && ph_pos.prow < pt->rows);
 
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
+  int the_button = 0; // lies
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousemode && !(event->state & GDK_SHIFT_MASK) && is_inside) {
-    VTermModifier state = convert_modifier(event->state);
-    int is_press;
-    switch(event->type) {
-    case GDK_BUTTON_PRESS:
-      is_press = 1;
-      break;
-    case GDK_BUTTON_RELEASE:
-      is_press = 0;
-      break;
-    default:
-      return TRUE;
-    }
+  if(pt->mousemode && !(pt->modifiers & GDK_SHIFT_MASK) && is_inside) {
+    VTermModifier state = convert_modifier(pt->modifiers);
     vterm_mouse_move(pt->vt, pos.row, pos.col, state);
-    vterm_mouse_button(pt->vt, event->button, is_press, state);
+    vterm_mouse_button(pt->vt, the_button, is_press, state);
     flush_outbuffer(pt);
   }
-  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
+  else if(the_button == 2 && is_press && is_inside) {
     /* Middle-click pastes primary selection */
     gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
     if(!str)
@@ -1618,20 +1618,21 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
 
     term_push_string(pt, str, TRUE);
   }
-  else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
+  else if(the_button == 1 && is_press && is_inside) {
     cancel_highlight(pt);
 
     pt->dragging = DRAG_PENDING;
     pt->drag_start = pos;
   }
-  else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->dragging != NO_DRAG) {
+  else if(the_button == 1 && !is_press && pt->dragging != NO_DRAG) {
     /* Always accept a release even when outside */
     pt->dragging = NO_DRAG;
 
     if(pt->highlight_valid)
       store_clipboard(pt);
   }
-  else if(event->button == 1 && event->type == GDK_2BUTTON_PRESS && is_inside) {
+  // TODO
+  else if(the_button == 1 && false && is_inside) {
     /* Highlight a word. start with the position, and extend it both sides
      * over word characters
      */
@@ -1685,6 +1686,18 @@ static gboolean widget_mousepress(GtkWidget *widget, GdkEventButton *event, gpoi
   }
 
   return TRUE;
+}
+
+static gboolean widget_mouse_pressed(GtkWidget *widget, gint n_press, gdouble x,
+                                    gdouble y, gpointer user_data)
+{
+  return widget_mouse_common(widget, n_press, x, y, user_data, true);
+}
+
+static gboolean widget_mouse_released(GtkWidget *widget, gint n_press, gdouble x,
+                                    gdouble y, gpointer user_data)
+{
+  return widget_mouse_common(widget, n_press, x, y, user_data, false);
 }
 
 static gboolean widget_mousemove(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
@@ -2061,14 +2074,13 @@ PangoTerm *pangoterm_new(int rows, int cols)
   GdkEventMask mask = gdk_window_get_events(pt->termdraw);
   gdk_window_set_events(pt->termdraw, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK|GDK_SCROLL_MASK);
 
-  
    GtkEventController *key_ev = gtk_event_controller_key_new(pt->termwin);
+   GtkEventController *button_ev = gtk_gesture_multi_press_new(pt->termwin);
 
   g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
-  // g_signal_connect(G_OBJECT(key_ev), "key-released", G_CALLBACK(widget_keyrelease), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-press-event",   G_CALLBACK(widget_mousepress), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "button-release-event", G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
+  g_signal_connect(G_OBJECT(button_ev), "released", G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "motion-notify-event",  G_CALLBACK(widget_mousemove), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
