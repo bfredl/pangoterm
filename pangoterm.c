@@ -6,8 +6,8 @@
 #include <cairo/cairo.h>
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
-#include <gdk/gdkkeysyms.h>
-#include <gdk/gdkx.h>
+// #include <gdk/gdkkeysyms.h>
+// #include <gdk/gdkx.h>
 
 #include "conf.h"
 
@@ -20,7 +20,7 @@ CONF_STRING(cursor,     0, "white",  "Cursor colour",     "COL");
 CONF_INT(border, 0, 2, "Border width", "PIXELS");
 
 static struct {
-  GdkColor col;
+  GdkRGBA col;
   gboolean is_set;
 } colours[16];
 
@@ -29,8 +29,8 @@ static void apply_colour(int index, ConfigValue v)
   if(index < 0 || index > 16)
     return;
 
-  colours[index].col = (GdkColor){ 0, 0, 0 };
-  gdk_color_parse(v.s, &colours[index].col);
+  colours[index].col = (GdkRGBA){ 0, 0, 0 };
+  gdk_rgba_parse(&colours[index].col, v.s);
   colours[index].is_set = true;
 }
 CONF_PARAMETRIC_STRING(colour, 0, apply_colour, "Palette colour", "COL");
@@ -64,10 +64,10 @@ CONF_BOOL(chord_shift_backspace, 0, TRUE, "Shift-Backspace chording");
 CONF_BOOL(chord_shift_enter,     0, TRUE, "Shift-Enter chording");
 
 #define VTERM_COLOR_FROM_GDK_COLOR(c) \
-  ((VTermColor){ .type = 0, .rgb.red = (c).red / 257, .rgb.green = (c).green / 257, .rgb.blue = (c).blue / 257 })
+  ((VTermColor){ .rgb.type = 0, .rgb.red = (c).red / 257, .rgb.green = (c).green / 257, .rgb.blue = (c).blue / 257 })
 
 #define GDK_COLOR_FROM_VTERM_COLOR(c) \
-  ((GdkColor){ .red = 257 * (c).rgb.red, .green = 257 * (c).rgb.green, .blue = 257 * (c).rgb.blue })
+  ((GdkRGBA){ .red = 257 * (c).rgb.red, .green = 257 * (c).rgb.green, .blue = 257 * (c).rgb.blue })
 
 #ifdef DEBUG
 # define DEBUG_PRINT_INPUT
@@ -143,8 +143,8 @@ struct PangoTerm {
       unsigned int dwl       : 1;
       unsigned int dhl       : 2;
     } attrs;
-    GdkColor fg_col;
-    GdkColor bg_col;
+    GdkRGBA fg_col;
+    GdkRGBA bg_col;
     PangoAttrList *pangoattrs;
     PangoLayout *layout;
   } pen;
@@ -174,15 +174,15 @@ struct PangoTerm {
   int cell_width;
   int cell_height;
 
-  GdkColor fg_col;
-  GdkColor bg_col;
+  GdkRGBA fg_col;
+  GdkRGBA bg_col;
 
   int has_focus;
   int cursor_visible;    /* VTERM_PROP_CURSORVISIBLE */
   int cursor_blinkstate; /* during high state of blink */
   int cursor_hidden_for_redraw; /* true to temporarily hide during redraw */
   VTermPos cursorpos;
-  GdkColor cursor_col;
+  GdkRGBA cursor_col;
   int cursor_shape;
 
 #define CURSOR_ENABLED(pt) ((pt)->cursor_visible && !(pt)->cursor_hidden_for_redraw)
@@ -192,7 +192,8 @@ struct PangoTerm {
   GtkWidget *termwin;
 
   cairo_surface_t *buffer;
-  GdkWindow *termdraw;
+  GdkSurface *termdraw;
+  GdkCairoContext *cairo_context;
   /* area in buffer that needs flushing to termdraw */
   GdkRectangle dirty_area;
 
@@ -209,8 +210,8 @@ struct PangoTerm {
   VTermPos highlight_start;
   VTermPos highlight_stop;
 
-  GtkClipboard *selection_primary;
-  GtkClipboard *selection_clipboard;
+  GdkClipboard *selection_primary;
+  GdkClipboard *selection_clipboard;
 
   GString *outbuffer;
   GString *tmpbuffer; /* for handling VTermStringFragment */
@@ -311,7 +312,7 @@ static VTermModifier convert_modifier(int state)
     mod |= VTERM_MOD_SHIFT;
   if(state & GDK_CONTROL_MASK)
     mod |= VTERM_MOD_CTRL;
-  if(state & GDK_MOD1_MASK)
+  if(state & GDK_ALT_MASK)
     mod |= VTERM_MOD_ALT;
 
   return mod;
@@ -545,7 +546,7 @@ static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
 {
   cairo_surface_flush(pt->buffer);
 
-  cairo_t* gc = gdk_cairo_create(pt->termdraw);
+  cairo_t* gc = gdk_cairo_context_cairo_create(pt->cairo_context);
   gdk_cairo_rectangle(gc, area);
   cairo_clip(gc);
 
@@ -702,8 +703,8 @@ static void flush_pending(PangoTerm *pt)
     gdk_cairo_rectangle(gc, &pending_area);
     cairo_clip(gc);
 
-    GdkColor bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
-    gdk_cairo_set_source_color(gc, &bg);
+    GdkRGBA bg = pt->pen.attrs.reverse ? pt->pen.fg_col : pt->pen.bg_col;
+    gdk_cairo_set_source_rgba(gc, &bg);
     cairo_paint(gc);
 
     cairo_restore(gc);
@@ -742,8 +743,8 @@ static void flush_pending(PangoTerm *pt)
     pango_layout_iter_free(iter);
 
     /* Draw glyphs */
-    GdkColor fg = pt->pen.attrs.reverse ? pt->pen.bg_col : pt->pen.fg_col;
-    gdk_cairo_set_source_color(gc, &fg);
+    GdkRGBA fg = pt->pen.attrs.reverse ? pt->pen.bg_col : pt->pen.fg_col;
+    gdk_cairo_set_source_rgba(gc, &fg);
     cairo_move_to(gc, glyphs_x, glyphs_y);
     pango_cairo_show_layout(gc, layout);
 
@@ -817,7 +818,7 @@ static void put_erase(PangoTerm *pt, int width, VTermPos pos)
 static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
 {
   PangoTerm *pt = user_data;
-  GdkColor col;
+  GdkRGBA col;
 
 #define ADDATTR(a) \
   do { \
@@ -969,7 +970,7 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
 
             switch(pt->cursor_shape) {
             case VTERM_PROP_CURSORSHAPE_UNDERLINE:
-              gdk_cairo_set_source_color(gc, &pt->cursor_col);
+              gdk_cairo_set_source_rgba(gc, &pt->cursor_col);
               cairo_rectangle(gc,
                   cursor_area.x,
                   cursor_area.y + (int)(cursor_area.height * 0.85),
@@ -978,7 +979,7 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
               cairo_fill(gc);
               break;
             case VTERM_PROP_CURSORSHAPE_BAR_LEFT:
-              gdk_cairo_set_source_color(gc, &pt->cursor_col);
+              gdk_cairo_set_source_rgba(gc, &pt->cursor_col);
               cairo_rectangle(gc,
                   cursor_area.x,
                   cursor_area.y,
@@ -1098,8 +1099,9 @@ static void store_clipboard(PangoTerm *pt)
 
   gchar *text = fetch_flow_text(pt, start, stop);
 
-  gtk_clipboard_clear(pt->selection_primary);
-  gtk_clipboard_set_text(pt->selection_primary, text, -1);
+  // TODO
+  // gdk_clipboard_clear(pt->selection_primary);
+  // gtk_clipboard_set_text(pt->selection_primary, text, -1);
 
   free(text);
 }
@@ -1307,7 +1309,7 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *user_data)
     break;
 
   case VTERM_PROP_ICONNAME:
-    gdk_window_set_icon_name(GDK_WINDOW(pt->termdraw), pt->tmpbuffer->str);
+    gtk_window_set_icon_name(GTK_WINDOW(pt->termwin), pt->tmpbuffer->str);
     break;
 
   case VTERM_PROP_TITLE:
@@ -1474,9 +1476,11 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
      ((keyval == 'v' || keyval == 'V') &&
       state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
-    gchar *str = gtk_clipboard_wait_for_text(keyval == GDK_KEY_Insert
-                                             ? pt->selection_primary
-                                             : pt->selection_clipboard);
+    // TODO
+    //gchar *str = gtk_clipboard_wait_for_text(keyval == GDK_KEY_Insert
+    //                                         ? pt->selection_primary
+    //                                         : pt->selection_clipboard);
+    gchar *str = NULL;
     if(!str)
       return TRUE;
 
@@ -1495,8 +1499,9 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
     if(!text)
       return TRUE;
 
-    gtk_clipboard_clear(pt->selection_clipboard);
-    gtk_clipboard_set_text(pt->selection_clipboard, text, -1);
+    // TODO
+    // gtk_clipboard_clear(pt->selection_clipboard);
+    // gtk_clipboard_set_text(pt->selection_clipboard, text, -1);
 
     free(text);
     return TRUE;
@@ -1571,11 +1576,11 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
   return FALSE;
 }
 
-static gboolean widget_keyrelease(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-  return gtk_im_context_filter_keypress(pt->im_context, event);
-}
+// static gboolean widget_keyrelease(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
+// {
+//   PangoTerm *pt = user_data;
+//   return gtk_im_context_filter_keypress(pt->im_context, event);
+// }
 
 static gboolean widget_modifiers(GtkEventController *widget, GdkModifierType object, gpointer user_data)
 {
@@ -1590,9 +1595,10 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
 {
   PangoTerm *pt = user_data;
 
-  const GdkEvent *ev = gtk_gesture_get_last_event(gesture, NULL);
-  // TODO: så jävla bull:
-  const GdkEventButton *event = ev;
+  GdkEvent *event = gtk_gesture_get_last_event(gesture, NULL);
+  const GdkEventType type = gdk_event_get_event_type(event);
+  GdkModifierType state = gdk_event_get_modifier_state(event);
+  guint button = gdk_button_event_get_button(event);
 
   PhyPos ph_pos = {
     .pcol = (x - CONF_border) / pt->cell_width,
@@ -1607,10 +1613,10 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
   VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
 
   /* Shift modifier bypasses terminal mouse handling */
-  if(pt->mousemode && !(event->state & GDK_SHIFT_MASK) && is_inside) {
-    VTermModifier state = convert_modifier(event->state);
+  if(pt->mousemode && !(state & GDK_SHIFT_MASK) && is_inside) {
+    VTermModifier vterm_state = convert_modifier(state);
     int is_press;
-    switch(event->type) {
+    switch(type) {
     case GDK_BUTTON_PRESS:
       is_press = 1;
       break;
@@ -1620,13 +1626,15 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
     default:
       return TRUE;
     }
-    vterm_mouse_move(pt->vt, pos.row, pos.col, state);
-    vterm_mouse_button(pt->vt, event->button, is_press, state);
+    vterm_mouse_move(pt->vt, pos.row, pos.col, vterm_state);
+    vterm_mouse_button(pt->vt, button, is_press, vterm_state);
     flush_outbuffer(pt);
   }
-  else if(event->button == 2 && event->type == GDK_BUTTON_PRESS && is_inside) {
+  else if(button == 2 && type == GDK_BUTTON_PRESS && is_inside) {
     /* Middle-click pastes primary selection */
-    gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
+    // TODO
+    // gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
+    gchar *str = NULL; // RYCK
     if(!str)
       return FALSE;
 
@@ -1634,20 +1642,20 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
 
     term_push_string(pt, str, TRUE);
   }
-  else if(event->button == 1 && event->type == GDK_BUTTON_PRESS && is_inside) {
+  else if(button == 1 && type == GDK_BUTTON_PRESS && n_press == 1 && is_inside) {
     cancel_highlight(pt);
 
     pt->dragging = DRAG_PENDING;
     pt->drag_start = pos;
   }
-  else if(event->button == 1 && event->type == GDK_BUTTON_RELEASE && pt->dragging != NO_DRAG) {
+  else if(button == 1 && type == GDK_BUTTON_RELEASE && pt->dragging != NO_DRAG) {
     /* Always accept a release even when outside */
     pt->dragging = NO_DRAG;
 
     if(pt->highlight_valid)
       store_clipboard(pt);
   }
-  else if(event->button == 1 && event->type == GDK_2BUTTON_PRESS && is_inside) {
+  else if(button == 1 && type == GDK_BUTTON_PRESS && n_press == 2 && is_inside) {
     /* Highlight a word. start with the position, and extend it both sides
      * over word characters
      */
@@ -1686,7 +1694,7 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
     blit_dirty(pt);
     store_clipboard(pt);
   }
-  else if(event->button == 1 && event->type == GDK_3BUTTON_PRESS && is_inside) {
+  else if(button == 1 && type == GDK_BUTTON_PRESS && n_press == 3 && is_inside) {
     /* Highlight an entire line */
     pt->highlight_valid = true;
     pt->highlight_start.row = pos.row;
@@ -1781,6 +1789,7 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
   return FALSE;
 }
 
+#if 0
 static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
@@ -1833,6 +1842,7 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
 
   return FALSE;
 }
+#endif
 
 static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
 {
@@ -1972,7 +1982,7 @@ static void widget_quit(GtkContainer* widget, gpointer unused_data)
   gtk_main_quit();
 }
 
-static GdkPixbuf *load_icon(GdkColor *background)
+static GdkPixbuf *load_icon(GdkRGBA *background)
 {
   /* This technique stolen from
    *   http://git.gnome.org/browse/gtk+/tree/gtk/gtkicontheme.c#n3180
@@ -2034,7 +2044,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->fonts[1] = NULL;
   pt->font_size = CONF_size;
 
-  pt->cursor_col = (GdkColor){ 0xffff, 0xffff, 0xffff };
+  pt->cursor_col = (GdkRGBA){ 0xffff, 0xffff, 0xffff };
   gdk_color_parse(CONF_cursor, &pt->cursor_col);
 
   /* Create VTerm */
@@ -2071,6 +2081,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   gtk_widget_realize(pt->termwin);
 
   pt->termdraw = gtk_widget_get_window(pt->termwin);
+  pt->cairo_context = gdk_surface_create_cairo_context(pt->termdraw);
 
   gdk_window_set_cursor(pt->termdraw, gdk_cursor_new(GDK_XTERM));
 
@@ -2084,6 +2095,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
    GtkEventController *key_ev = gtk_event_controller_key_new(pt->termwin);
    GtkGesture *button_ev = gtk_gesture_multi_press_new(pt->termwin);
    GtkEventController *motion_ev = gtk_event_controller_motion_new(pt->termwin);
+   // GtkEventController *scroll_ev = gtk_event_controller_scroll_new(pt->termwin);
 
   g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
@@ -2091,9 +2103,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
   g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(button_ev), "released", G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(motion_ev), "motion",  G_CALLBACK(widget_mousemove), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", G_CALLBACK(widget_focus_out), pt);
+  // g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
+  // g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
+  // g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", G_CALLBACK(widget_focus_out), pt);
   g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
 
   pt->im_context = gtk_im_multicontext_new();
@@ -2136,7 +2148,7 @@ guint32 pangoterm_get_windowid(PangoTerm *pt)
   return gdk_x11_window_get_xid(win);
 }
 
-void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col)
+void pangoterm_set_default_colors(PangoTerm *pt, GdkRGBA *fg_col, GdkRGBA *bg_col)
 {
   pt->fg_col = *fg_col;
   pt->bg_col = *bg_col;
@@ -2251,10 +2263,10 @@ void pangoterm_start(PangoTerm *pt)
 
   pangoterm_init_font(pt);
 
-  GdkColor fg_col = { 0xffff * 0.90, 0xffff * 0.90, 0xffff * 0.90 };
+  GdkRGBA fg_col = { 0xffff * 0.90, 0xffff * 0.90, 0xffff * 0.90 };
   gdk_color_parse(CONF_foreground, &fg_col);
 
-  GdkColor bg_col = { 0, 0, 0 };
+  GdkRGBA bg_col = { 0, 0, 0 };
   gdk_color_parse(CONF_background, &bg_col);
 
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);

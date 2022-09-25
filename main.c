@@ -129,7 +129,7 @@ int main(int argc, char *argv[])
     argc--;
   }
 
-  gtk_init(&argc, &argv);
+  gtk_init();
   setlocale(LC_CTYPE, NULL);
 
   PangoTerm *pt = pangoterm_new(CONF_lines, CONF_cols);
@@ -252,7 +252,10 @@ int main(int argc, char *argv[])
 
   pangoterm_start(pt);
 
-  gtk_main();
+  while (g_list_model_get_n_items (gtk_window_get_toplevels ()) > 0)
+    g_main_context_iteration (NULL, TRUE);
+
+  // gtk_main();
 
   pangoterm_free(pt);
 

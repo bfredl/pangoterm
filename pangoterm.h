@@ -4,6 +4,7 @@
 #include "vterm.h"
 
 #include <gtk/gtk.h>
+#include <gdk/gdk.h>
 
 typedef struct PangoTerm PangoTerm;
 
@@ -12,7 +13,7 @@ void pangoterm_free(PangoTerm *pt);
 
 guint32 pangoterm_get_windowid(PangoTerm *pt);
 
-void pangoterm_set_default_colors(PangoTerm *pt, GdkColor *fg_col, GdkColor *bg_col);
+void pangoterm_set_default_colors(PangoTerm *pt, GdkRGBA *fg_col, GdkRGBA *bg_col);
 void pangoterm_set_font_size(PangoTerm *pt, double size);
 void pangoterm_set_fonts(PangoTerm *pt, char *font, char *font_italic, char **alt_fonts); // ptr not value
 
