@@ -1054,7 +1054,6 @@ static void repaint_flow(PangoTerm *pt, VTermPos start, VTermPos stop)
 static gboolean cursor_blink(void *user_data)
 {
   PangoTerm *pt = user_data;
-  return TRUE; // TODO
 
   pt->cursor_blinkstate = !pt->cursor_blinkstate;
 
@@ -2120,17 +2119,16 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   
   GtkEventController *key_ev = gtk_event_controller_key_new();
-  gtk_widget_add_controller(pt->termwin, key_ev);
+  gtk_widget_add_controller(pt->termda, key_ev);
   GtkGesture *button_ev = gtk_gesture_click_new();
-  gtk_widget_add_controller(pt->termwin, GTK_EVENT_CONTROLLER(button_ev));
+  gtk_widget_add_controller(pt->termda, GTK_EVENT_CONTROLLER(button_ev));
   GtkEventController *motion_ev = gtk_event_controller_motion_new();
-  gtk_widget_add_controller(pt->termwin, motion_ev);
+  gtk_widget_add_controller(pt->termda, motion_ev);
   GtkEventController *focus_ev = gtk_event_controller_focus_new();
-  gtk_widget_add_controller(pt->termwin, focus_ev);
+  gtk_widget_add_controller(pt->termda, focus_ev);
   // GtkEventController *scroll_ev = gtk_event_controller_scroll_new();
 
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(pt->termda), widget_draw, pt, NULL);
-
 
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
   g_signal_connect(G_OBJECT(key_ev), "modifiers", G_CALLBACK(widget_modifiers), pt);
@@ -2142,6 +2140,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
   g_signal_connect(G_OBJECT(focus_ev), "leave", G_CALLBACK(widget_focus_out), pt);
   // TODO: should not be needed
   // g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
+
+  gtk_widget_set_focusable(pt->termda, true);
 
   pt->im_context = gtk_im_multicontext_new();
   gtk_im_context_set_client_widget(pt->im_context, pt->termwin);
