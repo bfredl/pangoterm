@@ -1,7 +1,8 @@
 #include "pangoterm.h"
 
 #include <string.h>  // memmove
-#include <wctype.h>
+#include <wctype.h> 
+#include <ibus.h>
 
 #include <cairo/cairo.h>
 #include <gtk/gtk.h>
@@ -116,7 +117,8 @@ struct PangoTerm {
   VTerm *vt;
   VTermScreen *vts;
 
-  GtkIMContext *im_context;
+  // GtkIMContext *im_context;
+  IBusInputContext *ibuscontext;
 
   // TODO: not needed in GTK4 itself!
   GdkModifierType modifiers;
@@ -959,7 +961,7 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
 
       if(draw_cursor) {
         GdkRectangle cursor_area = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, 1);
-        gtk_im_context_set_cursor_location(pt->im_context, &cursor_area);
+        // gtk_im_context_set_cursor_location(pt->im_context, &cursor_area);
 
         if (pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
             flush_pending(pt);
@@ -1443,6 +1445,119 @@ static void vscroll_delta(PangoTerm *pt, int delta)
   gtk_widget_queue_draw(pt->termda);
 }
 
+
+// IBUS {{{
+static IBusBus *_bus;
+
+static void
+_create_input_context_done (IBusBus       *bus,
+                            GAsyncResult  *res,
+                            PangoTerm *pt)
+{
+    GError *error = NULL;
+    IBusInputContext *context = ibus_bus_create_input_context_async_finish (
+            _bus, res, &error);
+    fprintf(stderr, "DONE context=%p\n", context);
+
+    // if (ibusimcontext->cancellable != NULL) {
+    //     g_object_unref (ibusimcontext->cancellable);
+    //     ibusimcontext->cancellable = NULL;
+    // }
+
+    if (context == NULL) {
+        g_warning ("Create input context failed: %s.", error->message);
+        g_error_free (error);
+    }
+    else {
+        ibus_input_context_set_client_commit_preedit (context, false);
+        pt->ibuscontext = context;
+
+        /*
+        g_signal_connect (ibusimcontext->ibuscontext,
+                          "commit-text",
+                          G_CALLBACK (_ibus_context_commit_text_cb),
+                          ibusimcontext);
+        g_signal_connect (ibusimcontext->ibuscontext,
+                          "forward-key-event",
+                          G_CALLBACK (_ibus_context_forward_key_event_cb),
+                          ibusimcontext);
+        g_signal_connect (ibusimcontext->ibuscontext,
+                          "delete-surrounding-text",
+                          G_CALLBACK (_ibus_context_delete_surrounding_text_cb),
+                          ibusimcontext);
+        g_signal_connect (ibusimcontext->ibuscontext,
+                          "update-preedit-text-with-mode",
+                          G_CALLBACK (_ibus_context_update_preedit_text_cb),
+                          ibusimcontext);
+        g_signal_connect (ibusimcontext->ibuscontext,
+                          "show-preedit-text",
+                          G_CALLBACK (_ibus_context_show_preedit_text_cb),
+                          ibusimcontext);
+        g_signal_connect (ibusimcontext->ibuscontext,
+                          "hide-preedit-text",
+                          G_CALLBACK (_ibus_context_hide_preedit_text_cb),
+                          ibusimcontext);
+        g_signal_connect (ibusimcontext->ibuscontext, "destroy",
+                          G_CALLBACK (_ibus_context_destroy_cb),
+                          ibusimcontext);
+        ibus_input_context_set_capabilities (pt->ibuscontext, ibusimcontext->caps);
+        */
+
+        if (pt->has_focus) {
+            /* The time order is _create_input_context() ->
+             * ibus_im_context_notify() -> ibus_im_context_focus_in() ->
+             * _create_input_context_done()
+             * so _set_content_type() is called at the beginning here
+             * because ibusimcontext->ibuscontext == NULL before. */
+            // _set_content_type (ibusimcontext);
+
+            ibus_input_context_focus_in (pt->ibuscontext);
+            // _set_cursor_location_internal (pt);
+        }
+    }
+}
+
+static void create_input_context (PangoTerm *pt)
+{
+    gchar *prgname = g_strdup (g_get_prgname());
+    gchar *client_name;
+    g_assert (pt->ibuscontext == NULL);
+
+    // g_return_if_fail (ibusimcontext->cancellable == NULL);
+
+    // ibusimcontext->cancellable = g_cancellable_new ();
+
+    if (!prgname) {
+        prgname = g_strdup ("pangoterm");
+    }
+
+    client_name = g_strdup_printf ("%s-im", prgname);
+    g_free (prgname);
+
+    ibus_bus_create_input_context_async (_bus,
+            client_name, -1,
+            NULL, // ibusimcontext->cancellable,
+            (GAsyncReadyCallback)_create_input_context_done,
+            pt);
+    g_free (client_name);
+}
+static void bus_connected_cb (IBusBus          *bus, PangoTerm    *pt)
+{
+  fprintf(stderr, "very connect\n");
+    create_input_context (pt);
+}
+
+static void ibus_connect_try (PangoTerm *pt)
+{
+    if (_bus == NULL) {
+        _bus = ibus_bus_new_async_client ();
+    }
+
+    g_signal_connect (_bus, "connected", G_CALLBACK (bus_connected_cb), pt);
+}
+
+// IBUS END }}}
+
 /*
  * GTK widget event handlers
  */
@@ -1462,6 +1577,8 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
   if(ret)
     return TRUE;
   */
+
+  fprintf(stderr, "TANGENT %d (%d %d)\n", keyval, keycode, state);
 
   // We don't need to track the state of modifier bits
   /* if(event->is_modifier)
@@ -1843,6 +1960,8 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
 {
   PangoTerm *pt = user_data;
 
+  printf("COMMIT %s\n", str);
+
   term_push_string(pt, str, FALSE);
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
@@ -1966,6 +2085,7 @@ static void widget_focus_in(GtkWidget *widget, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
+  fprintf(stderr, "GAIN\n");
 
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_focus_in(state);
@@ -1977,13 +2097,14 @@ static void widget_focus_in(GtkWidget *widget, gpointer user_data)
     blit_dirty(pt);
   }
 
-  gtk_im_context_focus_in(pt->im_context);
+  // gtk_im_context_focus_in(pt->im_context);
 }
 
 static void widget_focus_out(GtkWidget *widget, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
+  fprintf(stderr, "LOSS\n");
 
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_focus_out(state);
@@ -1994,7 +2115,7 @@ static void widget_focus_out(GtkWidget *widget, gpointer user_data)
     flush_pending(pt);
     blit_dirty(pt);
   }
-  gtk_im_context_focus_out(pt->im_context);
+  // gtk_im_context_focus_out(pt->im_context);
 }
 
 static void widget_quit(GtkWidget* widget, gpointer unused_data)
@@ -2143,14 +2264,22 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   gtk_widget_set_focusable(pt->termda, true);
 
-  pt->im_context = gtk_im_multicontext_new();
-  gtk_im_context_set_client_widget(pt->im_context, pt->termwin);
-  gtk_im_context_set_use_preedit(pt->im_context, false);
+  // NOTE: The IbusIMContext implementation for GTK4 is serverly broken. This is
+  // fundamentally a design issue as the GTK4/Wayland-first model does not fit
+  // with the X11/XIM flavoured IBus model. At all. This will all be fixed by
+  // adopting the Wayland IME protocol through the entire stack, but we are not
+  // there yet. Talk to IBus directly instead so we can fake the 
+  // pt->im_context = gtk_im_multicontext_new();
+  // gtk_im_context_set_client_widget(pt->im_context, pt->termwin);
+  // gtk_im_context_set_use_preedit(pt->im_context, false);
 
   // this is somehow not needed, and NOT inculding it implements shift-space properly???
   // gtk_event_controller_key_set_im_context(GTK_EVENT_CONTROLLER_KEY(key_ev), pt->im_context);
 
-  g_signal_connect(G_OBJECT(pt->im_context), "commit", G_CALLBACK(widget_im_commit), pt);
+  // g_signal_connect(G_OBJECT(pt->im_context), "commit", G_CALLBACK(widget_im_commit), pt);
+
+  ibus_connect_try(pt); // async
+
   g_signal_connect(G_OBJECT(pt->termda), "resize", G_CALLBACK(widget_resize), pt);
 
   pt->dragging = NO_DRAG;

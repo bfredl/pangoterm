@@ -31,6 +31,9 @@ LDFLAGS +=$(shell pkg-config --libs   gtk4)
 CFLAGS  +=$(shell pkg-config --cflags cairo)
 LDFLAGS +=$(shell pkg-config --libs   cairo)
 
+CFLAGS  +=$(shell pkg-config --cflags ibus-1.0)
+LDFLAGS +=$(shell pkg-config --libs   ibus-1.0)
+
 PREFIX=/usr/local
 BINDIR=$(PREFIX)/bin
 SHAREDIR=$(PREFIX)/share
