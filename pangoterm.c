@@ -1856,11 +1856,38 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
   return FALSE;
 }
 
+gboolean
+vendored_gdk_cairo_get_clip_rectangle (cairo_t      *cr,
+                              GdkRectangle *rect)
+{
+  double x1, y1, x2, y2;
+  gboolean clip_exists;
+
+  cairo_clip_extents (cr, &x1, &y1, &x2, &y2);
+
+  clip_exists = x1 < x2 && y1 < y2;
+
+  if (rect)
+    {
+      x1 = floor (x1);
+      y1 = floor (y1);
+      x2 = ceil (x2);
+      y2 = ceil (y2);
+
+      rect->x      = CLAMP (x1,      G_MININT, G_MAXINT);
+      rect->y      = CLAMP (y1,      G_MININT, G_MAXINT);
+      rect->width  = CLAMP (x2 - x1, G_MININT, G_MAXINT);
+      rect->height = CLAMP (y2 - y1, G_MININT, G_MAXINT);
+    }
+
+  return clip_exists;
+}
+
 static gboolean widget_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   GdkRectangle rect;
-  gdk_cairo_get_clip_rectangle(cr, &rect);
+  vendored_gdk_cairo_get_clip_rectangle(cr, &rect);
 
 
   /* GDK always sends resize events before expose events, so it's possible this
@@ -1881,12 +1908,15 @@ static gboolean widget_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
   return TRUE;
 }
 
-static void widget_resize(GtkContainer* widget, gpointer user_data)
+static void widget_resize(GdkSurface* surface, gint width, gint height, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
   gint raw_width, raw_height;
-  gtk_window_get_size(GTK_WINDOW(widget), &raw_width, &raw_height);
+  // TODO: gdk_surface_get_scale_factor() (except that we don't use it)
+  raw_width = width;
+  raw_height = height;
+  // gtk_window_get_size(GTK_WINDOW(widget), &raw_width, &raw_height);
 
   raw_width  -= 2 * CONF_border;
   raw_height -= 2 * CONF_border;
