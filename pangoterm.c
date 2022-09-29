@@ -1694,6 +1694,32 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
 
 }
 
+static gchar *get_clipboard_text(PangoTerm *pt, gboolean primary) {
+  // Initialize a GValue to receive text
+  GValue value = G_VALUE_INIT;
+  g_value_init (&value, G_TYPE_STRING);
+
+  // Get the content provider for the clipboard, and ask it for text
+  // TODO: avfubba primary
+  GdkClipboard *clipboard = primary ? pt->selection_primary : pt->selection_clipboard;
+  GdkContentProvider *provider = gdk_clipboard_get_content (clipboard);
+
+  fprintf(stderr, "NELL %p %p\n", clipboard, provider);
+
+  if (!provider) {
+    return NULL;
+  }
+
+  // If the content provider does not contain text, we are not interested
+  if (!gdk_content_provider_get_value (provider, &value, NULL))
+    return NULL;
+
+  char *str = g_strdup(g_value_get_string (&value));
+
+  g_value_unset (&value);
+  return str;
+}
+
 static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, GdkModifierType state) {
 
 
@@ -1709,13 +1735,14 @@ static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, G
     //gchar *str = gtk_clipboard_wait_for_text(keyval == GDK_KEY_Insert
     //                                         ? pt->selection_primary
     //                                         : pt->selection_clipboard);
-    gchar *str = NULL;
+    gchar *str = get_clipboard_text(pt, keyval == GDK_KEY_Insert);
     if(!str)
       return TRUE;
 
     lf_to_cr(str);
 
     term_push_string(pt, str, TRUE);
+    free(str);
     return TRUE;
   }
   if((keyval == 'c' || keyval == 'C') &&
@@ -2408,8 +2435,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->dragging = NO_DRAG;
 
   // TODO: GRUGG
-  // pt->selection_primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
-  // pt->selection_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+  GdkDisplay *display = gdk_display_get_default();
+  pt->selection_primary   = gdk_display_get_primary_clipboard(display);
+  pt->selection_clipboard = gdk_display_get_clipboard(display);
 
   pt->scroll_size = CONF_scrollback_size;
   pt->sb_buffer = g_new0(PangoTermScrollbackLine*, pt->scroll_size);
