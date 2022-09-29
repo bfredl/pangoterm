@@ -1465,7 +1465,7 @@ _ibus_context_forward_key_event_cb (IBusInputContext  *ibuscontext,
                                     PangoTerm     *ibusimcontext)
 {
 
-    fprintf(stderr, "very tangent: %d-%d\n", keyval, state);
+    fprintf(stderr, "very tangent: %d (%d)\n", keyval, state);
 }
 
 static void
@@ -1521,7 +1521,7 @@ _create_input_context_done (IBusBus       *bus,
                           ibusimcontext);
         */
 
-        guint32 caps = IBUS_CAP_FOCUS;
+        guint32 caps = IBUS_CAP_FOCUS; // | IBUS_CAP_PREEDIT_TEXT (SOOON)
         ibus_input_context_set_capabilities (pt->ibuscontext, caps);
 
         if (pt->has_focus) {
@@ -1616,7 +1616,7 @@ static gboolean ibus_filter_keypress(PangoTerm *pt,  guint keyval,
     return false;
   }
 
-  fprintf(stderr, "FILTRERA\n");
+  fprintf(stderr, "FILTRERA ");
   if (release)
     state |= IBUS_RELEASE_MASK;
 
@@ -1765,11 +1765,11 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
   return FALSE;
 }
 
-// static gboolean widget_keyrelease(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
-// {
-//   PangoTerm *pt = user_data;
-//   return gtk_im_context_filter_keypress(pt->im_context, event);
-// }
+static gboolean widget_keyrelease(GtkEventController *controller,  guint keyval,
+                                guint keycode, GdkModifierType state, gpointer user_data) {
+  PangoTerm *pt = user_data;
+  return ibus_filter_keypress(pt, keyval, keycode, state, true);
+}
 
 static gboolean widget_modifiers(GtkEventController *widget, GdkModifierType object, gpointer user_data)
 {
@@ -2334,6 +2334,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(pt->termda), widget_draw, pt, NULL);
 
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
+  g_signal_connect(G_OBJECT(key_ev), "key-released", G_CALLBACK(widget_keyrelease), pt);
   g_signal_connect(G_OBJECT(key_ev), "modifiers", G_CALLBACK(widget_modifiers), pt);
   g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(button_ev), "released", G_CALLBACK(widget_mousepress), pt);
