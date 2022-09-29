@@ -918,6 +918,7 @@ static void chpen(VTermScreenCell *cell, void *user_data, int cursoroverride)
     pt->pen.bg_col = col;
   }
 }
+static void pt_ibus_set_cursor_location(PangoTerm *pt, GdkRectangle cursor_area);
 
 static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
 {
@@ -962,6 +963,7 @@ static void repaint_phyrect(PangoTerm *pt, PhyRect ph_rect)
       if(draw_cursor) {
         GdkRectangle cursor_area = GDKRECTANGLE_FROM_PHYPOS_CELLS(pt, ph_pos, 1);
         // gtk_im_context_set_cursor_location(pt->im_context, &cursor_area);
+        pt_ibus_set_cursor_location(pt, cursor_area);
 
         if (pt->cursor_shape != VTERM_PROP_CURSORSHAPE_BLOCK) {
             flush_pending(pt);
@@ -1445,16 +1447,40 @@ static void vscroll_delta(PangoTerm *pt, int delta)
   gtk_widget_queue_draw(pt->termda);
 }
 
+static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, GdkModifierType state);
 
 // IBUS {{{
 static IBusBus *_bus;
 
+static void pt_ibus_set_cursor_location(PangoTerm *pt, GdkRectangle area) {
+  if (!pt->ibuscontext) {
+    return ;
+  }
+
+     /* FIXME: GTK_STYLE_CLASS_TITLEBAR is available in GTK3 but not GTK4.
+      * gtk_css_boxes_get_content_rect() is available in GTK4 but it's an
+      * internal API and calculate the window edge 32 in GTK3.
+      */
+    area.y += 32;
+        ibus_input_context_set_cursor_location_relative (
+            pt->ibuscontext,
+            area.x,
+            area.y,
+            area.width,
+            area.height);
+}
+
 static void
 _ibus_context_commit_text_cb (IBusInputContext *ibuscontext,
                               IBusText         *text,
-                              PangoTerm    *ibusimcontext)
+                              PangoTerm    *pt)
 {
-    fprintf(stderr, "very text: %s\n", text->text);
+  // fprintf(stderr, "very text: %s\n", text->text);
+
+  term_push_string(pt, text->text, FALSE);
+
+  if(CONF_unscroll_on_key && pt->scroll_offs)
+    vscroll_delta(pt, -pt->scroll_offs);
 }
 
 static void
@@ -1462,10 +1488,13 @@ _ibus_context_forward_key_event_cb (IBusInputContext  *ibuscontext,
                                     guint              keyval,
                                     guint              keycode,
                                     guint              state,
-                                    PangoTerm     *ibusimcontext)
+                                    PangoTerm     *pt)
 {
 
-    fprintf(stderr, "very tangent: %d (%d)\n", keyval, state);
+    // fprintf(stderr, "very tangent: %d (%d)\n", keyval, state);
+    if (!(state & IBUS_RELEASE_MASK)) {
+      pangoterm_keypress(pt, keyval, keycode+8, state);
+    }
 }
 
 static void
@@ -1478,9 +1507,9 @@ _create_input_context_done (IBusBus       *bus,
             _bus, res, &error);
     fprintf(stderr, "DONE context=%p\n", context);
 
-    // if (ibusimcontext->cancellable != NULL) {
-    //     g_object_unref (ibusimcontext->cancellable);
-    //     ibusimcontext->cancellable = NULL;
+    // if (pt->cancellable != NULL) {
+    //     g_object_unref (pt->cancellable);
+    //     pt->cancellable = NULL;
     // }
 
     if (context == NULL) {
@@ -1577,6 +1606,7 @@ static void ibus_connect_try (PangoTerm *pt)
 }
 
 typedef struct {
+  PangoTerm *pt;
 guint keyval;
                                 guint keycode; GdkModifierType state; bool release;
 
@@ -1602,11 +1632,13 @@ _process_key_event_done (GObject      *object,
         g_error_free (error);
     }
 
-    fprintf(stderr, "TANGENTEN %d\n", retval);
-
     if (retval == FALSE) {
-        // widget_real_handle_keypress(data);
+      if (!(data->state & IBUS_RELEASE_MASK)) {
+        fprintf(stderr, "falskeligen %d\n", data->keyval);
+        pangoterm_keypress(data->pt, data->keyval, data->keycode, data->state);
+      }
     }
+    free(data);
 }
 
 static gboolean ibus_filter_keypress(PangoTerm *pt,  guint keyval,
@@ -1616,11 +1648,14 @@ static gboolean ibus_filter_keypress(PangoTerm *pt,  guint keyval,
     return false;
   }
 
-  fprintf(stderr, "FILTRERA ");
   if (release)
     state |= IBUS_RELEASE_MASK;
 
   ProcessKeyEventData *data = malloc(sizeof(*data));
+  data->pt = pt;
+  data->keyval = keyval;
+  data->keycode = keycode;
+  data->state = state;
 
   ibus_input_context_process_key_event_async (pt->ibuscontext,
       keyval,
@@ -1655,7 +1690,12 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
   if(ret)
     return TRUE;
 
-  fprintf(stderr, "TANGENT %d (%d %d)\n", keyval, keycode, state);
+  return pangoterm_keypress(pt, keyval, keycode, state);
+
+}
+
+static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, GdkModifierType state) {
+
 
   // We don't need to track the state of modifier bits
   /* if(event->is_modifier)
@@ -2162,7 +2202,7 @@ static void widget_focus_in(GtkWidget *widget, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
-  fprintf(stderr, "GAIN\n");
+  // fprintf(stderr, "GAIN\n");
 
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_focus_in(state);
@@ -2183,7 +2223,7 @@ static void widget_focus_out(GtkWidget *widget, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
-  fprintf(stderr, "LOSS\n");
+  // fprintf(stderr, "LOSS\n");
 
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_focus_out(state);
