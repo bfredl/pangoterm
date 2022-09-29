@@ -544,6 +544,8 @@ static void lf_to_cr(gchar *str)
 
 static void blit_buffer(PangoTerm *pt, GdkRectangle *area)
 {
+  return; // TODO
+
   cairo_surface_flush(pt->buffer);
 
   cairo_t* gc = gdk_cairo_context_cairo_create(pt->cairo_context);
@@ -1941,7 +1943,7 @@ static void widget_resize(GdkSurface* surface, gint width, gint height, gpointer
   if(pt->resizedfn)
     (*pt->resizedfn)(pt->rows, pt->cols, pt->resizedfn_data);
 
-  cairo_surface_t* new_buffer = gdk_window_create_similar_surface(pt->termdraw,
+  cairo_surface_t* new_buffer = gdk_surface_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
       pt->cols * pt->cell_width,
       pt->rows * pt->cell_height);
@@ -1972,7 +1974,7 @@ static void widget_resize(GdkSurface* surface, gint width, gint height, gpointer
   return;
 }
 
-static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
+static void widget_focus_in(GtkWidget *widget, void *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 1;
@@ -1990,7 +1992,7 @@ static void widget_focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer us
   gtk_im_context_focus_in(pt->im_context);
 }
 
-static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer user_data)
+static void widget_focus_out(GtkWidget *widget, void *event, gpointer user_data)
 {
   PangoTerm *pt = user_data;
   pt->has_focus = 0;
@@ -2007,9 +2009,9 @@ static void widget_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer u
   gtk_im_context_focus_out(pt->im_context);
 }
 
-static void widget_quit(GtkContainer* widget, gpointer unused_data)
+static void widget_quit(GtkWidget* widget, gpointer unused_data)
 {
-  gtk_main_quit();
+  exit(77);
 }
 
 static GdkPixbuf *load_icon(GdkRGBA *background)
@@ -2043,9 +2045,9 @@ static GdkPixbuf *load_icon(GdkRGBA *background)
       "  </style>\n"
       "  <xi:include href=\"data:image/svg+xml;base64,%s" "\"/>\n"
       "</svg>",
-      background->red   / 255,
-      background->green / 255,
-      background->blue  / 255,
+      (guint)(background->red   / 255),
+      (guint)(background->green / 255),
+      (guint)(background->blue  / 255),
       icon_base64);
   g_free(icon_base64);
 
@@ -2075,7 +2077,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   pt->font_size = CONF_size;
 
   pt->cursor_col = (GdkRGBA){ 0xffff, 0xffff, 0xffff };
-  gdk_color_parse(CONF_cursor, &pt->cursor_col);
+  gdk_rgba_parse(&pt->cursor_col, CONF_cursor);
 
   /* Create VTerm */
   pt->vt = vterm_new(rows, cols);
@@ -2101,33 +2103,39 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   /* Set up GTK widget */
 
-  pt->termwin = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-  gtk_widget_set_double_buffered(pt->termwin, FALSE);
-  gtk_widget_modify_bg(pt->termwin, GTK_STATE_NORMAL, &pt->bg_col);
+  pt->termwin = gtk_window_new();
+  // Abe would ask: HOW
+  // gtk_widget_set_double_buffered(pt->termwin, FALSE);
+  // HOW
+  // gtk_widget_(pt->termwin, GTK_STATE_NORMAL, &pt->bg_col);
 
   pt->glyphs = g_string_sized_new(128);
   pt->glyph_widths = g_array_new(FALSE, FALSE, sizeof(int));
 
   gtk_widget_realize(pt->termwin);
 
-  pt->termdraw = gtk_widget_get_window(pt->termwin);
+  pt->termdraw = gtk_native_get_surface(GTK_NATIVE(pt->termwin));
   pt->cairo_context = gdk_surface_create_cairo_context(pt->termdraw);
 
-  gdk_window_set_cursor(pt->termdraw, gdk_cursor_new(GDK_XTERM));
+  // HOW, Abe would need to know
+  // gdk_window_set_cursor(pt->termdraw, gdk_cursor_new(GDK_XTERM));
 
   cursor_start_blinking(pt);
   pt->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
 
-  GdkEventMask mask = gdk_window_get_events(pt->termdraw);
-  gdk_window_set_events(pt->termdraw, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK|GDK_SCROLL_MASK);
+  //GdkEventMask mask = gdk_window_get_events(pt->termdraw);
+  //gdk_window_set_events(pt->termdraw, mask|GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK|GDK_SCROLL_MASK);
 
   
-   GtkEventController *key_ev = gtk_event_controller_key_new(pt->termwin);
-   GtkGesture *button_ev = gtk_gesture_multi_press_new(pt->termwin);
-   GtkEventController *motion_ev = gtk_event_controller_motion_new(pt->termwin);
-   // GtkEventController *scroll_ev = gtk_event_controller_scroll_new(pt->termwin);
+   GtkEventController *key_ev = gtk_event_controller_key_new();
+   gtk_widget_add_controller(pt->termwin, key_ev);
+   GtkGesture *button_ev = gtk_gesture_click_new();
+   gtk_widget_add_controller(pt->termwin, GTK_EVENT_CONTROLLER(button_ev));
+   GtkEventController *motion_ev = gtk_event_controller_motion_new();
+   gtk_widget_add_controller(pt->termwin, motion_ev);
+   // GtkEventController *scroll_ev = gtk_event_controller_scroll_new();
 
-  g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
+  // g_signal_connect(G_OBJECT(pt->termwin), "draw", G_CALLBACK(widget_draw), pt);
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
   g_signal_connect(G_OBJECT(key_ev), "modifiers", G_CALLBACK(widget_modifiers), pt);
   g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
@@ -2136,22 +2144,24 @@ PangoTerm *pangoterm_new(int rows, int cols)
   // g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
   // g_signal_connect(G_OBJECT(pt->termwin), "focus-in-event",  G_CALLBACK(widget_focus_in),  pt);
   // g_signal_connect(G_OBJECT(pt->termwin), "focus-out-event", G_CALLBACK(widget_focus_out), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
+  // TODO: should not be needed
+  // g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
 
   pt->im_context = gtk_im_multicontext_new();
-  gtk_im_context_set_client_window(pt->im_context, pt->termdraw);
+  gtk_im_context_set_client_widget(pt->im_context, pt->termwin);
   gtk_im_context_set_use_preedit(pt->im_context, false);
 
   // this is somehow not needed, and NOT inculding it implements shift-space properly???
   // gtk_event_controller_key_set_im_context(GTK_EVENT_CONTROLLER_KEY(key_ev), pt->im_context);
 
   g_signal_connect(G_OBJECT(pt->im_context), "commit", G_CALLBACK(widget_im_commit), pt);
-  g_signal_connect(G_OBJECT(pt->termwin), "check-resize", G_CALLBACK(widget_resize), pt);
+  // g_signal_connect(G_OBJECT(pt->termwin), "check-resize", G_CALLBACK(widget_resize), pt);
 
   pt->dragging = NO_DRAG;
 
-  pt->selection_primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
-  pt->selection_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+  // TODO: GRUGG
+  // pt->selection_primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+  // pt->selection_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
 
   pt->scroll_size = CONF_scrollback_size;
   pt->sb_buffer = g_new0(PangoTermScrollbackLine*, pt->scroll_size);
@@ -2174,8 +2184,8 @@ void pangoterm_free(PangoTerm *pt)
 guint32 pangoterm_get_windowid(PangoTerm *pt)
 {
   /* TODO: return 0 when not on X11 */
-  GdkWindow *win = gtk_widget_get_window(pt->termwin);
-  return gdk_x11_window_get_xid(win);
+  // GdkWindow *win = gtk_widget_get_window(pt->termwin);
+  return 0;  // hahhahaha
 }
 
 void pangoterm_set_default_colors(PangoTerm *pt, GdkRGBA *fg_col, GdkRGBA *bg_col)
@@ -2197,7 +2207,8 @@ void pangoterm_set_default_colors(PangoTerm *pt, GdkRGBA *fg_col, GdkRGBA *bg_co
 
   GdkPixbuf *icon = load_icon(bg_col);
   if(icon) {
-    gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
+    // TODO: Abe would wonder, HOW
+    // gtk_window_set_icon(GTK_WINDOW(pt->termwin), icon);
     g_object_unref(icon);
   }
 }
@@ -2251,7 +2262,8 @@ void pangoterm_set_resized_fn(PangoTerm *pt, PangoTermResizedFn *fn, void *user)
 }
 
 void pangoterm_init_font(PangoTerm *pt) {
-  cairo_t *cctx = gdk_cairo_create(pt->termdraw);
+  // cairo_t *cctx = gdk_cairo_create(pt->termdraw);
+  cairo_t *cctx = cairo_create(pt->buffer);
   PangoContext *pctx = pango_cairo_create_context(cctx);
 
   PangoFontDescription *fontdesc = pango_font_description_from_string(pt->fonts[0]);
@@ -2259,7 +2271,10 @@ void pangoterm_init_font(PangoTerm *pt) {
     pango_font_description_set_size(fontdesc, pt->font_size * PANGO_SCALE);
 
   pango_context_set_font_description(pctx, fontdesc);
-  pango_cairo_context_set_resolution(pctx, gdk_screen_get_resolution(gdk_screen_get_default()));
+
+  // pango_cairo_context_set_resolution(pctx, gdk_screen_get_resolution(gdk_screen_get_default()));
+  // TODO: så jävla BULL
+  pango_cairo_context_set_resolution(pctx, 200);
 
   pt->pen.pangoattrs = pango_attr_list_new();
   pt->pen.layout = pango_layout_new(pctx);
@@ -2282,7 +2297,7 @@ void pangoterm_set_fontsize(PangoTerm* pt, double font_size) {
   pt->font_size = font_size;
   pangoterm_init_font(pt);
   pt->did_set_font_size = true;
-  gtk_window_resize(GTK_WINDOW(pt->termwin),
+  gtk_window_set_default_size(GTK_WINDOW(pt->termwin),
       pt->cols * pt->cell_width, pt->rows * pt->cell_height);
 }
 
@@ -2294,41 +2309,42 @@ void pangoterm_start(PangoTerm *pt)
   pangoterm_init_font(pt);
 
   GdkRGBA fg_col = { 0xffff * 0.90, 0xffff * 0.90, 0xffff * 0.90 };
-  gdk_color_parse(CONF_foreground, &fg_col);
+  gdk_rgba_parse(&fg_col, CONF_foreground);
 
   GdkRGBA bg_col = { 0, 0, 0 };
-  gdk_color_parse(CONF_background, &bg_col);
+  gdk_rgba_parse(&bg_col, CONF_background);
 
   pangoterm_set_default_colors(pt, &fg_col, &bg_col);
 
-  gtk_window_resize(GTK_WINDOW(pt->termwin),
+  gtk_window_set_default_size(GTK_WINDOW(pt->termwin),
       pt->cols * pt->cell_width  + 2 * CONF_border,
       pt->rows * pt->cell_height + 2 * CONF_border);
 
-  pt->buffer = gdk_window_create_similar_surface(pt->termdraw,
+  pt->buffer = gdk_surface_create_similar_surface(pt->termdraw,
       CAIRO_CONTENT_COLOR,
       pt->cols * pt->cell_width,
       pt->rows * pt->cell_height);
 
-  GdkGeometry hints;
+  // GdkGeometry hints;
 
-  hints.min_width  = pt->cell_width  + 2 * CONF_border;
-  hints.min_height = pt->cell_height + 2 * CONF_border;
-  hints.width_inc  = pt->cell_width;
-  hints.height_inc = pt->cell_height;
+  // hints.min_width  = pt->cell_width  + 2 * CONF_border;
+  // hints.min_height = pt->cell_height + 2 * CONF_border;
+  // hints.width_inc  = pt->cell_width;
+  // hints.height_inc = pt->cell_height;
 
   gtk_window_set_resizable(GTK_WINDOW(pt->termwin), TRUE);
-  gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
+  // TODO: bull
+  // gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
 
   vterm_screen_reset(pt->vts, 1);
 
   VTermState *state = vterm_obtain_state(pt->vt);
   vterm_state_set_termprop(state, VTERM_PROP_CURSORSHAPE, &(VTermValue){ .number = CONF_cursor_shape });
 
-  if(CONF_geometry && CONF_geometry[0])
-    gtk_window_parse_geometry(GTK_WINDOW(pt->termwin), CONF_geometry);
+  // if(CONF_geometry && CONF_geometry[0])
+  //   gtk_window_parse_geometry(GTK_WINDOW(pt->termwin), CONF_geometry);
 
-  gtk_widget_show_all(pt->termwin);
+  gtk_widget_show(pt->termwin);
 }
 
 void pangoterm_push_bytes(PangoTerm *pt, const char *bytes, size_t len)

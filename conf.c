@@ -285,7 +285,8 @@ int conf_parse(int *argcp, char ***argvp)
   args_context = g_option_context_new("commandline...");
   g_option_context_add_main_entries(args_context, option_entries, NULL);
 
-  g_option_context_add_group(args_context, gtk_get_option_group(TRUE));
+  // TODO: BULL
+  // g_option_context_add_group(args_context, gtk_get_option_group(TRUE));
 
   /* Convert -e to -- so as to treat a -e option as a commandline vector
    * to run, and satisfy the x-terminal-emulator spec

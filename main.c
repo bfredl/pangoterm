@@ -84,7 +84,8 @@ static gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer 
       break;
 
     if(bytes == 0 || (bytes == -1 && errno == EIO)) {
-      gtk_main_quit();
+      // TODO
+      // gtk_main_quit();
       return FALSE;
     }
     if(bytes < 0) {
