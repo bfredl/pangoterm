@@ -1450,6 +1450,25 @@ static void vscroll_delta(PangoTerm *pt, int delta)
 static IBusBus *_bus;
 
 static void
+_ibus_context_commit_text_cb (IBusInputContext *ibuscontext,
+                              IBusText         *text,
+                              PangoTerm    *ibusimcontext)
+{
+    fprintf(stderr, "very text: %s\n", text->text);
+}
+
+static void
+_ibus_context_forward_key_event_cb (IBusInputContext  *ibuscontext,
+                                    guint              keyval,
+                                    guint              keycode,
+                                    guint              state,
+                                    PangoTerm     *ibusimcontext)
+{
+
+    fprintf(stderr, "very tangent: %d-%d\n", keyval, state);
+}
+
+static void
 _create_input_context_done (IBusBus       *bus,
                             GAsyncResult  *res,
                             PangoTerm *pt)
@@ -1472,15 +1491,15 @@ _create_input_context_done (IBusBus       *bus,
         ibus_input_context_set_client_commit_preedit (context, false);
         pt->ibuscontext = context;
 
-        /*
-        g_signal_connect (ibusimcontext->ibuscontext,
+        g_signal_connect (pt->ibuscontext,
                           "commit-text",
                           G_CALLBACK (_ibus_context_commit_text_cb),
-                          ibusimcontext);
-        g_signal_connect (ibusimcontext->ibuscontext,
+                          pt);
+        g_signal_connect (pt->ibuscontext,
                           "forward-key-event",
                           G_CALLBACK (_ibus_context_forward_key_event_cb),
-                          ibusimcontext);
+                          pt);
+        /*
         g_signal_connect (ibusimcontext->ibuscontext,
                           "delete-surrounding-text",
                           G_CALLBACK (_ibus_context_delete_surrounding_text_cb),
@@ -1500,8 +1519,10 @@ _create_input_context_done (IBusBus       *bus,
         g_signal_connect (ibusimcontext->ibuscontext, "destroy",
                           G_CALLBACK (_ibus_context_destroy_cb),
                           ibusimcontext);
-        ibus_input_context_set_capabilities (pt->ibuscontext, ibusimcontext->caps);
         */
+
+        guint32 caps = IBUS_CAP_FOCUS;
+        ibus_input_context_set_capabilities (pt->ibuscontext, caps);
 
         if (pt->has_focus) {
             /* The time order is _create_input_context() ->
@@ -1543,7 +1564,6 @@ static void create_input_context (PangoTerm *pt)
 }
 static void bus_connected_cb (IBusBus          *bus, PangoTerm    *pt)
 {
-  fprintf(stderr, "very connect\n");
     create_input_context (pt);
 }
 
@@ -1556,6 +1576,64 @@ static void ibus_connect_try (PangoTerm *pt)
     g_signal_connect (_bus, "connected", G_CALLBACK (bus_connected_cb), pt);
 }
 
+typedef struct {
+guint keyval;
+                                guint keycode; GdkModifierType state; bool release;
+
+} ProcessKeyEventData;
+
+static void
+_process_key_event_done (GObject      *object,
+                         GAsyncResult *res,
+                         gpointer      user_data)
+{
+    IBusInputContext *context = (IBusInputContext *)object;
+
+    ProcessKeyEventData *data = (ProcessKeyEventData *)user_data;
+    GError *error = NULL;
+    gboolean retval;
+
+    retval = ibus_input_context_process_key_event_async_finish (context,
+                                                                res,
+                                                                &error);
+
+    if (error != NULL) {
+        g_warning ("Process Key Event failed: %s.", error->message);
+        g_error_free (error);
+    }
+
+    fprintf(stderr, "TANGENTEN %d\n", retval);
+
+    if (retval == FALSE) {
+        // widget_real_handle_keypress(data);
+    }
+}
+
+static gboolean ibus_filter_keypress(PangoTerm *pt,  guint keyval,
+                                guint keycode, GdkModifierType state, bool release) {
+
+  if (!pt->ibuscontext) {
+    return false;
+  }
+
+  fprintf(stderr, "FILTRERA\n");
+  if (release)
+    state |= IBUS_RELEASE_MASK;
+
+  ProcessKeyEventData *data = malloc(sizeof(*data));
+
+  ibus_input_context_process_key_event_async (pt->ibuscontext,
+      keyval,
+      keycode - 8,
+      state,
+      -1,
+      NULL,
+      _process_key_event_done,
+      data);
+
+  return true;
+}
+
 // IBUS END }}}
 
 /*
@@ -1566,17 +1644,16 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
                                 guint keycode, GdkModifierType state, gpointer user_data)
 {
   PangoTerm *pt = user_data;
+
   /* GtkIMContext will eat a Shift-Space and not tell us about shift.
    * Also don't let IME eat any GDK_KEY_KP_ events
    */
-  /*
   gboolean ret = (state & GDK_SHIFT_MASK && keyval == ' ') ? FALSE
                : (keyval >= GDK_KEY_KP_Space && keyval <= GDK_KEY_KP_Divide) ? FALSE
-               : gtk_im_context_filter_keypress(pt->im_context, event);
+               : ibus_filter_keypress(pt, keyval, keycode, state, false);
 
   if(ret)
     return TRUE;
-  */
 
   fprintf(stderr, "TANGENT %d (%d %d)\n", keyval, keycode, state);
 
@@ -2097,7 +2174,9 @@ static void widget_focus_in(GtkWidget *widget, gpointer user_data)
     blit_dirty(pt);
   }
 
-  // gtk_im_context_focus_in(pt->im_context);
+  if (pt->ibuscontext) {
+    ibus_input_context_focus_in (pt->ibuscontext);
+  }
 }
 
 static void widget_focus_out(GtkWidget *widget, gpointer user_data)
@@ -2115,7 +2194,10 @@ static void widget_focus_out(GtkWidget *widget, gpointer user_data)
     flush_pending(pt);
     blit_dirty(pt);
   }
-  // gtk_im_context_focus_out(pt->im_context);
+  if (pt->ibuscontext) {
+    ibus_input_context_focus_out (pt->ibuscontext);
+  }
+
 }
 
 static void widget_quit(GtkWidget* widget, gpointer unused_data)
