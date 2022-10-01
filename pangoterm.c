@@ -1705,6 +1705,10 @@ void clipboard_text_cb ( GObject* source_object, GAsyncResult* res, gpointer use
 
   gchar *str = gdk_clipboard_read_text_finish ( GDK_CLIPBOARD(source_object), res, NULL);
 
+  if (!str) {
+    return;
+  }
+
   lf_to_cr(str);
 
   term_push_string(pt, str, TRUE);
@@ -1716,12 +1720,7 @@ static void request_clipboard_text(PangoTerm *pt, gboolean primary) {
   // Get the content provider for the clipboard, and ask it for text
   GdkClipboard *clipboard = primary ? pt->selection_primary : pt->selection_clipboard;
 
-  gdk_clipboard_read_text_async (
-  clipboard,
-  NULL,
-  clipboard_text_cb,
-  pt
-);
+  gdk_clipboard_read_text_async ( clipboard, NULL, clipboard_text_cb, pt);
 
 }
 
