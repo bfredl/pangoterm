@@ -2379,6 +2379,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   GtkEventController *key_ev = gtk_event_controller_key_new();
   gtk_widget_add_controller(pt->termda, key_ev);
   GtkGesture *button_ev = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(button_ev), 0); // CAN HAS ALL THE BUTTONS
   gtk_widget_add_controller(pt->termda, GTK_EVENT_CONTROLLER(button_ev));
   GtkEventController *motion_ev = gtk_event_controller_motion_new();
   gtk_widget_add_controller(pt->termda, motion_ev);
