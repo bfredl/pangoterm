@@ -1698,30 +1698,31 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
 
 }
 
-static gchar *get_clipboard_text(PangoTerm *pt, gboolean primary) {
-  // Initialize a GValue to receive text
-  GValue value = G_VALUE_INIT;
-  g_value_init (&value, G_TYPE_STRING);
+void clipboard_text_cb ( GObject* source_object, GAsyncResult* res, gpointer user_data)
+{
 
+  PangoTerm *pt = user_data;
+
+  gchar *str = gdk_clipboard_read_text_finish ( GDK_CLIPBOARD(source_object), res, NULL);
+
+  lf_to_cr(str);
+
+  term_push_string(pt, str, TRUE);
+  g_free(str);
+
+}
+
+static void request_clipboard_text(PangoTerm *pt, gboolean primary) {
   // Get the content provider for the clipboard, and ask it for text
-  // TODO: avfubba primary
   GdkClipboard *clipboard = primary ? pt->selection_primary : pt->selection_clipboard;
-  GdkContentProvider *provider = gdk_clipboard_get_content (clipboard);
 
-  fprintf(stderr, "NELL %p %p\n", clipboard, provider);
+  gdk_clipboard_read_text_async (
+  clipboard,
+  NULL,
+  clipboard_text_cb,
+  pt
+);
 
-  if (!provider) {
-    return NULL;
-  }
-
-  // If the content provider does not contain text, we are not interested
-  if (!gdk_content_provider_get_value (provider, &value, NULL))
-    return NULL;
-
-  char *str = g_strdup(g_value_get_string (&value));
-
-  g_value_unset (&value);
-  return str;
 }
 
 static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, GdkModifierType state)
@@ -1730,14 +1731,7 @@ static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, G
      ((keyval == 'v' || keyval == 'V') &&
       state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
-    gchar *str = get_clipboard_text(pt, keyval == GDK_KEY_Insert);
-    if(!str)
-      return TRUE;
-
-    lf_to_cr(str);
-
-    term_push_string(pt, str, TRUE);
-    free(str);
+    request_clipboard_text(pt, keyval == GDK_KEY_Insert);
     return TRUE;
   }
   if((keyval == 'c' || keyval == 'C') &&
@@ -1884,15 +1878,7 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
   }
   else if(button == 2 && type == GDK_BUTTON_PRESS && is_inside) {
     /* Middle-click pastes primary selection */
-    // TODO
-    // gchar *str = gtk_clipboard_wait_for_text(pt->selection_primary);
-    gchar *str = NULL; // RYCK
-    if(!str)
-      return FALSE;
-
-    lf_to_cr(str);
-
-    term_push_string(pt, str, TRUE);
+    request_clipboard_text(pt, true);
   }
   else if(button == 1 && type == GDK_BUTTON_PRESS && n_press == 1 && is_inside) {
     cancel_highlight(pt);
