@@ -208,6 +208,8 @@ struct PangoTerm {
   /* Current mouse position of selection drag */
   VTermPos drag_pos;
 
+  PhyPos last_ph_pos;
+
   /* Start and stop bounds of the selection */
   bool highlight_valid;
   VTermPos highlight_start;
@@ -220,6 +222,8 @@ struct PangoTerm {
   GString *tmpbuffer; /* for handling VTermStringFragment */
   bool did_set_font_size;
 };
+
+void pangoterm_set_fontsize(PangoTerm* pt, double font_size);
 
 /*
  * Utility functions
@@ -1720,21 +1724,12 @@ static gchar *get_clipboard_text(PangoTerm *pt, gboolean primary) {
   return str;
 }
 
-static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, GdkModifierType state) {
-
-
-  // We don't need to track the state of modifier bits
-  /* if(event->is_modifier)
-    return FALSE; */
-
+static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, GdkModifierType state)
+{
   if((keyval == GDK_KEY_Insert && state & GDK_SHIFT_MASK) ||
      ((keyval == 'v' || keyval == 'V') &&
       state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
-    // TODO
-    //gchar *str = gtk_clipboard_wait_for_text(keyval == GDK_KEY_Insert
-    //                                         ? pt->selection_primary
-    //                                         : pt->selection_clipboard);
     gchar *str = get_clipboard_text(pt, keyval == GDK_KEY_Insert);
     if(!str)
       return TRUE;
@@ -1855,6 +1850,7 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
   const GdkEventType type = gdk_event_get_event_type(event);
   GdkModifierType state = gdk_event_get_modifier_state(event);
   guint button = gdk_button_event_get_button(event);
+  fprintf(stderr, "SARDINE %d %x %d\n", type, state, button);
 
   PhyPos ph_pos = {
     .pcol = (x - CONF_border) / pt->cell_width,
@@ -1976,6 +1972,8 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
     .prow = (y - CONF_border) / pt->cell_height,
   };
 
+  pt->last_ph_pos = ph_pos;
+
   // GdkModifierType state = gtk_event_controller_get_current_event_state(controller);
   GdkModifierType state = pt->modifiers;
 
@@ -2045,28 +2043,24 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
   return FALSE;
 }
 
-#if 0
-static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
+static gboolean widget_scroll(GtkEventController *scroll, gdouble dx, gdouble dy, gpointer user_data)
 {
   PangoTerm *pt = user_data;
+  GdkEvent *event = gtk_event_controller_get_current_event(scroll);
+  GdkModifierType state = gdk_event_get_modifier_state(event);
 
-  PhyPos ph_pos = {
-    .pcol = (event->x - CONF_border) / pt->cell_width,
-    .prow = (event->y - CONF_border) / pt->cell_height,
-  };
 
-  if(!(~event->state & (GDK_SHIFT_MASK|GDK_CONTROL_MASK))) {
-    switch(event->direction) {
-      case GDK_SCROLL_UP:
-          pangoterm_set_fontsize(pt, pt->font_size+1);
-          break;
-      case GDK_SCROLL_DOWN:
-          pangoterm_set_fontsize(pt, pt->font_size-1);
-          break;
-      default:
-                             return FALSE;
+  PhyPos ph_pos = pt->last_ph_pos;
+
+  if(!(~state & (GDK_SHIFT_MASK|GDK_CONTROL_MASK))) {
+    if (dy < 0) {
+      pangoterm_set_fontsize(pt, pt->font_size+1);
+    } else if (dy > 0) {
+      pangoterm_set_fontsize(pt, pt->font_size-1);
+    } else {
+      return FALSE;
     }
-  } else if(pt->mousemode && !(event->state & GDK_SHIFT_MASK)) {
+  } else if(pt->mousemode && !(state & GDK_SHIFT_MASK)) {
     VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
     if(pos.row < 0 || pos.row >= pt->rows)
       return TRUE;
@@ -2074,31 +2068,30 @@ static gboolean widget_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer
     /* Translate scroll direction back into a button number */
 
     int button;
-    switch(event->direction) {
-      case GDK_SCROLL_UP:    button = 4; break;
-      case GDK_SCROLL_DOWN:  button = 5; break;
-      default:
-                             return FALSE;
+    if (dy < 0) {
+      button = 4;
+    } else if (dy > 0) {
+      button = 5;
+    } else {
+      return FALSE;
     }
-    VTermModifier state = convert_modifier(event->state);
+    VTermModifier vterm_state = convert_modifier(state);
 
-    vterm_mouse_move(pt->vt, pos.row, pos.col, state);
-    vterm_mouse_button(pt->vt, button, 1, state);
+    vterm_mouse_move(pt->vt, pos.row, pos.col, vterm_state);
+    vterm_mouse_button(pt->vt, button, 1, vterm_state);
     flush_outbuffer(pt);
   }
   else {
-    switch(event->direction) {
-      case GDK_SCROLL_UP:    vscroll_delta(pt, +CONF_scroll_wheel_delta); break;
-      case GDK_SCROLL_DOWN:  vscroll_delta(pt, -CONF_scroll_wheel_delta); break;
-      case GDK_SCROLL_RIGHT: hscroll_delta(pt, +1); break;
-      case GDK_SCROLL_LEFT:  hscroll_delta(pt, -1); break;
-      default:              return FALSE;
+    if (dy != 0) {
+      vscroll_delta(pt, dy*CONF_scroll_wheel_delta);
+    }
+    if (dx != 0) {
+      hscroll_delta(pt, dx);
     }
   }
 
   return FALSE;
 }
-#endif
 
 static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
 {
@@ -2267,11 +2260,6 @@ static void widget_focus_out(GtkWidget *widget, gpointer user_data)
 
 }
 
-static void widget_quit(GtkWidget* widget, gpointer unused_data)
-{
-  exit(77);
-}
-
 static GdkPixbuf *load_icon(GdkRGBA *background)
 {
   /* This technique stolen from
@@ -2396,7 +2384,8 @@ PangoTerm *pangoterm_new(int rows, int cols)
   gtk_widget_add_controller(pt->termda, motion_ev);
   GtkEventController *focus_ev = gtk_event_controller_focus_new();
   gtk_widget_add_controller(pt->termda, focus_ev);
-  // GtkEventController *scroll_ev = gtk_event_controller_scroll_new();
+  GtkEventController *scroll_ev = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+  gtk_widget_add_controller(pt->termda, scroll_ev);
 
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(pt->termda), widget_draw, pt, NULL);
 
@@ -2406,11 +2395,9 @@ PangoTerm *pangoterm_new(int rows, int cols)
   g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(button_ev), "released", G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(motion_ev), "motion",  G_CALLBACK(widget_mousemove), pt);
-  // g_signal_connect(G_OBJECT(pt->termwin), "scroll-event",  G_CALLBACK(widget_scroll), pt);
+  g_signal_connect(G_OBJECT(scroll_ev), "scroll",  G_CALLBACK(widget_scroll), pt);
   g_signal_connect(G_OBJECT(focus_ev), "enter",  G_CALLBACK(widget_focus_in),  pt);
   g_signal_connect(G_OBJECT(focus_ev), "leave", G_CALLBACK(widget_focus_out), pt);
-  // TODO: should not be needed
-  // g_signal_connect(G_OBJECT(pt->termwin), "destroy", G_CALLBACK(widget_quit), pt);
 
   gtk_widget_set_focusable(pt->termda, true);
 
