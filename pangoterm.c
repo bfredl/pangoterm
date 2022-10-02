@@ -120,9 +120,6 @@ struct PangoTerm {
   // GtkIMContext *im_context;
   IBusInputContext *ibuscontext;
 
-  // TODO: not needed in GTK4 itself!
-  GdkModifierType modifiers;
-
   int mousemode;
 
   GdkRectangle pending_area;
@@ -1836,14 +1833,6 @@ static gboolean widget_keyrelease(GtkEventController *controller,  guint keyval,
   return ibus_filter_keypress(pt, keyval, keycode, state, true);
 }
 
-static gboolean widget_modifiers(GtkEventController *widget, GdkModifierType object, gpointer user_data)
-{
-  PangoTerm *pt = user_data;
-  pt->modifiers = object;
-  fprintf(stderr, "RYCK: %d\n", object);
-  return FALSE;
-}
-
 static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
                                     gdouble y, gpointer user_data)
 {
@@ -1968,8 +1957,7 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
 
   pt->last_ph_pos = ph_pos;
 
-  // GdkModifierType state = gtk_event_controller_get_current_event_state(controller);
-  GdkModifierType state = pt->modifiers;
+  GdkModifierType state = gtk_event_controller_get_current_event_state(controller);
 
   /* If the mouse is being dragged, we'll get motion events even outside our
    * window */
@@ -2395,7 +2383,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   g_signal_connect(G_OBJECT(key_ev), "key-pressed", G_CALLBACK(widget_keypress), pt);
   g_signal_connect(G_OBJECT(key_ev), "key-released", G_CALLBACK(widget_keyrelease), pt);
-  g_signal_connect(G_OBJECT(key_ev), "modifiers", G_CALLBACK(widget_modifiers), pt);
+  // g_signal_connect(G_OBJECT(key_ev), "modifiers", G_CALLBACK(widget_modifiers), pt);
   g_signal_connect(G_OBJECT(button_ev), "pressed",   G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(button_ev), "released", G_CALLBACK(widget_mousepress), pt);
   g_signal_connect(G_OBJECT(motion_ev), "motion",  G_CALLBACK(widget_mousemove), pt);
