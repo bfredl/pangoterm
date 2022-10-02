@@ -1105,9 +1105,16 @@ static void store_clipboard(PangoTerm *pt)
 
   gchar *text = fetch_flow_text(pt, start, stop);
 
-  // TODO
-  // gdk_clipboard_clear(pt->selection_primary);
-  // gtk_clipboard_set_text(pt->selection_primary, text, -1);
+  // Initialize a GValue with the contents of the widget
+  GValue value = G_VALUE_INIT;
+  g_value_init (&value, G_TYPE_STRING);
+  g_value_set_string (&value, text);
+
+  // Store the value in the clipboard object
+  // TODO: somehow into pt->selection_clipboard as well
+  gdk_clipboard_set_value (pt->selection_primary, &value);
+
+  g_value_unset (&value);
 
   free(text);
 }
@@ -2397,7 +2404,7 @@ PangoTerm *pangoterm_new(int rows, int cols)
   // fundamentally a design issue as the GTK4/Wayland-first model does not fit
   // with the X11/XIM flavoured IBus model. At all. This will all be fixed by
   // adopting the Wayland IME protocol through the entire stack, but we are not
-  // there yet. Talk to IBus directly instead so we can fake the 
+  // there yet. Talk to IBus directly instead so we can fake the intended behavior.
   // pt->im_context = gtk_im_multicontext_new();
   // gtk_im_context_set_client_widget(pt->im_context, pt->termwin);
   // gtk_im_context_set_use_preedit(pt->im_context, false);
