@@ -84,7 +84,8 @@ static gboolean master_readable(GIOChannel *source, GIOCondition cond, gpointer 
       break;
 
     if(bytes == 0 || (bytes == -1 && errno == EIO)) {
-      gtk_main_quit();
+      // TODO
+      // gtk_main_quit();
       return FALSE;
     }
     if(bytes < 0) {
@@ -119,7 +120,7 @@ int main(int argc, char *argv[])
 {
   VTERM_CHECK_VERSION;
 
-  setenv("GDK_BACKEND", "x11", TRUE);
+  // setenv("GDK_BACKEND", "x11", TRUE);
   if(!conf_parse(&argc, &argv))
     exit(1);
 
@@ -129,7 +130,7 @@ int main(int argc, char *argv[])
     argc--;
   }
 
-  gtk_init(&argc, &argv);
+  gtk_init();
   setlocale(LC_CTYPE, NULL);
 
   PangoTerm *pt = pangoterm_new(CONF_lines, CONF_cols);
@@ -252,7 +253,10 @@ int main(int argc, char *argv[])
 
   pangoterm_start(pt);
 
-  gtk_main();
+  while (g_list_model_get_n_items (gtk_window_get_toplevels ()) > 0)
+    g_main_context_iteration (NULL, TRUE);
+
+  // gtk_main();
 
   pangoterm_free(pt);
 
