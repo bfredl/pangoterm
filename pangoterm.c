@@ -1261,16 +1261,18 @@ static int term_moverect(VTermRect dest, VTermRect src, void *user_data)
       pt->buffer,
       (dest.start_col - src.start_col) * pt->cell_width,
       (dest.start_row - src.start_row) * pt->cell_height);
+  // HACK: for some reason cairo_paint() from a surface to itself
+  // does not work when scrolling up (memset rather than memmove)
+  // somehow this depends on some configuration of the surface itself
+  // (works like memmove on x11, but like memcpy on wayland)
+  cairo_push_group(gc);
+  cairo_paint(gc);
+  cairo_pop_group_to_source(gc);
   cairo_paint(gc);
 
   cairo_destroy(gc);
 
-  // blit_buffer(pt, &(GdkRectangle){
-  //     .x      = destarea.x + CONF_border,
-  //     .y      = destarea.y + CONF_border,
-  //     .width  = destarea.width,
-  //     .height = destarea.height,
-  // });
+  gtk_widget_queue_draw(pt->termda);
 
   return 1;
 }
@@ -1383,6 +1385,7 @@ static void hscroll_delta(PangoTerm *pt, int delta)
 
 static void vscroll_delta(PangoTerm *pt, int delta)
 {
+
   if(pt->on_altscreen) {
     altscreen_scroll(pt, delta, GTK_ORIENTATION_VERTICAL);
     return;
@@ -1436,6 +1439,13 @@ static void vscroll_delta(PangoTerm *pt, int delta)
     gdk_cairo_rectangle(gc, &destarea);
     cairo_clip(gc);
     cairo_set_source_surface(gc, pt->buffer, 0, delta * pt->cell_height);
+    // HACK: for some reason cairo_paint() from a surface to itself
+    // does not work when scrolling up (memset rather than memmove)
+    // somehow this depends on some configuration of the surface itself
+    // (works like memmove on x11, but like memcpy on wayland)
+    cairo_push_group(gc);
+    cairo_paint(gc);
+    cairo_pop_group_to_source(gc);
     cairo_paint(gc);
 
     cairo_destroy(gc);
@@ -1843,7 +1853,6 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
   const GdkEventType type = gdk_event_get_event_type(event);
   GdkModifierType state = gdk_event_get_modifier_state(event);
   guint button = gdk_button_event_get_button(event);
-  fprintf(stderr, "SARDINE %d %x %d\n", type, state, button);
 
   PhyPos ph_pos = {
     .pcol = (x - CONF_border) / pt->cell_width,
@@ -2068,7 +2077,7 @@ static gboolean widget_scroll(GtkEventController *scroll, gdouble dx, gdouble dy
   }
   else {
     if (dy != 0) {
-      vscroll_delta(pt, dy*CONF_scroll_wheel_delta);
+      vscroll_delta(pt, -dy*CONF_scroll_wheel_delta);
     }
     if (dx != 0) {
       hscroll_delta(pt, dx);
@@ -2119,7 +2128,7 @@ vendored_gdk_cairo_get_clip_rectangle (cairo_t      *cr,
   return clip_exists;
 }
 
-static void widget_draw(GtkDrawingArea *da, cairo_t *cr, int width, int height, gpointer user_data)
+static void widget_draw(GtkDrawingArea *da, cairo_t *gc, int width, int height, gpointer user_data)
 {
   PangoTerm *pt = user_data;
 
@@ -2135,8 +2144,17 @@ static void widget_draw(GtkDrawingArea *da, cairo_t *cr, int width, int height, 
   if(height > bottom)
     height = bottom;
 
-  if(height && width)
-    blit_buffer(pt, cr, width, height);
+  if(height && width) {
+    {
+      // TODO: "bleed" out the edge of the backing buffer instead
+      cairo_save(gc);
+      cairo_set_source_rgba(gc, 0.0, 0.0, 0.0, 1.0);
+      cairo_rectangle(gc, 0, 0, width, height);
+      cairo_paint(gc);
+      cairo_restore(gc);
+    }
+    blit_buffer(pt, gc, width, height);
+  }
 
   return;
 }
