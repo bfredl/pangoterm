@@ -1,6 +1,7 @@
 #include "pangoterm.h"
 
 #include <string.h>  // memmove
+#include <stdbool.h>
 #include <wctype.h> 
 #include <ibus.h>
 
@@ -42,10 +43,10 @@ CONF_DOUBLE(size, 's', 9.0, "Font size", "NUM");
 
 CONF_INT(cursor_blink_interval, 0, 500, "Cursor blink interval", "MSEC");
 
-CONF_BOOL(bold_highbright, 0, TRUE, "Bold is high-brightness");
-CONF_BOOL(altscreen, 0, TRUE, "Alternate screen buffer switching");
+CONF_BOOL(bold_highbright, 0, true, "Bold is high-brightness");
+CONF_BOOL(altscreen, 0, true, "Alternate screen buffer switching");
 
-CONF_BOOL(altscreen_scroll, 0, FALSE, "Emulate arrows for mouse scrolling in alternate screen buffer");
+CONF_BOOL(altscreen_scroll, 0, false, "Emulate arrows for mouse scrolling in alternate screen buffer");
 
 CONF_INT(scrollback_size, 0, 1000, "Scrollback size", "LINES");
 
@@ -53,16 +54,16 @@ CONF_INT(scrollbar_width, 0, 3, "Scroll bar width", "PIXELS");
 
 CONF_INT(scroll_wheel_delta, 0, 3, "Number of lines to scroll on mouse wheel", "LINES");
 
-CONF_BOOL(unscroll_on_output, 0, TRUE, "Scroll to bottom on output");
-CONF_BOOL(unscroll_on_key,    0, TRUE, "Scroll to bottom on keypress");
+CONF_BOOL(unscroll_on_output, 0, true, "Scroll to bottom on output");
+CONF_BOOL(unscroll_on_key,    0, true, "Scroll to bottom on keypress");
 
-CONF_BOOL(doubleclick_fullword, 0, FALSE, "Double-click selects fullwords (until whitespace)");
+CONF_BOOL(doubleclick_fullword, 0, false, "Double-click selects fullwords (until whitespace)");
 
 CONF_STRING(geometry, 0, "", "Initial window geometry", "GEOM");
 
-CONF_BOOL(chord_shift_space,     0, TRUE, "Shift-Space chording");
-CONF_BOOL(chord_shift_backspace, 0, TRUE, "Shift-Backspace chording");
-CONF_BOOL(chord_shift_enter,     0, TRUE, "Shift-Enter chording");
+CONF_BOOL(chord_shift_space,     0, true, "Shift-Space chording");
+CONF_BOOL(chord_shift_backspace, 0, true, "Shift-Backspace chording");
+CONF_BOOL(chord_shift_enter,     0, true, "Shift-Enter chording");
 
 #define VTERM_COLOR_FROM_GDK_COLOR(c) \
   ((VTermColor){ .rgb.type = 0, .rgb.red = (c).red * 255, .rgb.green = (c).green * 255, .rgb.blue = (c).blue * 255 })
@@ -1069,7 +1070,7 @@ static gboolean cursor_blink(void *user_data)
     blit_dirty(pt);
   }
 
-  return TRUE;
+  return true;
 }
 
 static void cursor_start_blinking(PangoTerm *pt)
@@ -1124,7 +1125,7 @@ static void cancel_highlight(PangoTerm *pt)
   if(!pt->highlight_valid)
     return;
 
-  pt->highlight_valid = FALSE;
+  pt->highlight_valid = false;
 
   repaint_flow(pt, pt->highlight_start, pt->highlight_stop);
   flush_pending(pt);
@@ -1495,7 +1496,7 @@ _ibus_context_commit_text_cb (IBusInputContext *ibuscontext,
 {
   // fprintf(stderr, "very text: %s\n", text->text);
 
-  term_push_string(pt, text->text, FALSE);
+  term_push_string(pt, text->text, false);
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
     vscroll_delta(pt, -pt->scroll_offs);
@@ -1650,7 +1651,7 @@ _process_key_event_done (GObject      *object,
         g_error_free (error);
     }
 
-    if (retval == FALSE) {
+    if (retval == false) {
       if (!(data->state & IBUS_RELEASE_MASK)) {
         fprintf(stderr, "falskeligen %d\n", data->keyval);
         pangoterm_keypress(data->pt, data->keyval, data->keycode, data->state);
@@ -1701,12 +1702,12 @@ static gboolean widget_keypress(GtkEventController *controller,  guint keyval,
   /* GtkIMContext will eat a Shift-Space and not tell us about shift.
    * Also don't let IME eat any GDK_KEY_KP_ events
    */
-  gboolean ret = (state & GDK_SHIFT_MASK && keyval == ' ') ? FALSE
-               : (keyval >= GDK_KEY_KP_Space && keyval <= GDK_KEY_KP_Divide) ? FALSE
+  gboolean ret = (state & GDK_SHIFT_MASK && keyval == ' ') ? false
+               : (keyval >= GDK_KEY_KP_Space && keyval <= GDK_KEY_KP_Divide) ? false
                : ibus_filter_keypress(pt, keyval, keycode, state, false);
 
   if(ret)
-    return TRUE;
+    return true;
 
   return pangoterm_keypress(pt, keyval, keycode, state);
 
@@ -1725,7 +1726,7 @@ void clipboard_text_cb ( GObject* source_object, GAsyncResult* res, gpointer use
 
   lf_to_cr(str);
 
-  term_push_string(pt, str, TRUE);
+  term_push_string(pt, str, true);
   g_free(str);
 
 }
@@ -1745,32 +1746,32 @@ static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, G
       state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK)) {
     /* Shift-Insert or Ctrl-Shift-V pastes clipboard */
     request_clipboard_text(pt, keyval == GDK_KEY_Insert);
-    return TRUE;
+    return true;
   }
   if((keyval == 'c' || keyval == 'C') &&
      state & GDK_CONTROL_MASK && state & GDK_SHIFT_MASK) {
     /* Ctrl-Shift-C copies to clipboard */
     if(!pt->highlight_valid)
-      return TRUE;
+      return true;
 
     gchar *text = fetch_flow_text(pt, pt->highlight_start, pt->highlight_stop);
     if(!text)
-      return TRUE;
+      return true;
 
     // TODO
     // gtk_clipboard_clear(pt->selection_clipboard);
     // gtk_clipboard_set_text(pt->selection_clipboard, text, -1);
 
     free(text);
-    return TRUE;
+    return true;
   }
   if(keyval == GDK_KEY_Page_Down && state & GDK_SHIFT_MASK) {
     vscroll_delta(pt, -pt->rows / 2);
-    return TRUE;
+    return true;
   }
   if(keyval == GDK_KEY_Page_Up && state & GDK_SHIFT_MASK) {
     vscroll_delta(pt, +pt->rows / 2);
-    return TRUE;
+    return true;
   }
 
   VTermModifier mod = convert_modifier(state);
@@ -1804,14 +1805,14 @@ static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, G
     vterm_keyboard_key(pt->vt, vterm_keyval, mod);
   }
   else if(keyval >= 0x10000000) /* Extension key, not printable Unicode */
-    return FALSE;
+    return false;
   else if(keyval >= 0x01000000) /* Unicode shifted */
     vterm_keyboard_unichar(pt->vt, keyval - 0x01000000, mod);
   else if(keyval < 0x0f00) {
     /* GDK key code; convert to Unicode */
     guint32 unichar = gdk_keyval_to_unicode(keyval);
     if (unichar == 0)
-      return FALSE;
+      return false;
 
     /* Shift-Space is too easy to mistype so optionally ignore that */
     if(mod == VTERM_MOD_SHIFT && keyval == ' ')
@@ -1824,14 +1825,14 @@ static gboolean pangoterm_keypress(PangoTerm *pt, guint keyval, guint keycode, G
     /* event->keyval is a keypad number; just treat it as Unicode */
     vterm_keyboard_unichar(pt->vt, keyval - GDK_KEY_KP_0 + '0', mod);
   else
-    return FALSE;
+    return false;
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
     vscroll_delta(pt, -pt->scroll_offs);
 
   flush_outbuffer(pt);
 
-  return FALSE;
+  return false;
 }
 
 static gboolean widget_keyrelease(GtkEventController *controller,  guint keyval,
@@ -1874,7 +1875,7 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
       is_press = 0;
       break;
     default:
-      return TRUE;
+      return true;
     }
     vterm_mouse_move(pt->vt, pos.row, pos.col, vterm_state);
     vterm_mouse_button(pt->vt, button, is_press, vterm_state);
@@ -1950,7 +1951,7 @@ static gboolean widget_mousepress(GtkGesture *gesture, gint n_press, gdouble x,
     store_clipboard(pt);
   }
 
-  return TRUE;
+  return true;
 }
 
 static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdouble y, gpointer user_data)
@@ -1981,7 +1982,7 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
   /* Shift modifier bypasses terminal mouse handling */
   if(pt->mousemode > VTERM_PROP_MOUSE_CLICK && !(state & GDK_SHIFT_MASK) && is_inside) {
     if(pos.row < 0 || pos.row >= pt->rows)
-      return TRUE;
+      return true;
     VTermModifier vterm_state = convert_modifier(state);
     vterm_mouse_move(pt->vt, pos.row, pos.col, vterm_state);
     flush_outbuffer(pt);
@@ -1990,7 +1991,7 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
     VTermPos old_pos = pt->dragging == DRAGGING ? pt->drag_pos : pt->drag_start;
     if(pos.row == old_pos.row && pos.col == old_pos.col)
       /* Unchanged; stop here */
-      return FALSE;
+      return false;
 
     pt->dragging = DRAGGING;
     pt->drag_pos = pos;
@@ -2029,7 +2030,7 @@ static gboolean widget_mousemove(GtkEventController *controller, gdouble x, gdou
     blit_dirty(pt);
   }
 
-  return FALSE;
+  return false;
 }
 
 static gboolean widget_scroll(GtkEventController *scroll, gdouble dx, gdouble dy, gpointer user_data)
@@ -2047,12 +2048,12 @@ static gboolean widget_scroll(GtkEventController *scroll, gdouble dx, gdouble dy
     } else if (dy > 0) {
       pangoterm_set_fontsize(pt, pt->font_size-1);
     } else {
-      return FALSE;
+      return false;
     }
   } else if(pt->mousemode && !(state & GDK_SHIFT_MASK)) {
     VTermPos pos = VTERMPOS_FROM_PHYSPOS(pt, ph_pos);
     if(pos.row < 0 || pos.row >= pt->rows)
-      return TRUE;
+      return true;
 
     /* Translate scroll direction back into a button number */
 
@@ -2062,7 +2063,7 @@ static gboolean widget_scroll(GtkEventController *scroll, gdouble dx, gdouble dy
     } else if (dy > 0) {
       button = 5;
     } else {
-      return FALSE;
+      return false;
     }
     VTermModifier vterm_state = convert_modifier(state);
 
@@ -2079,7 +2080,7 @@ static gboolean widget_scroll(GtkEventController *scroll, gdouble dx, gdouble dy
     }
   }
 
-  return FALSE;
+  return false;
 }
 
 static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer user_data)
@@ -2088,12 +2089,12 @@ static gboolean widget_im_commit(GtkIMContext *context, gchar *str, gpointer use
 
   printf("COMMIT %s\n", str);
 
-  term_push_string(pt, str, FALSE);
+  term_push_string(pt, str, false);
 
   if(CONF_unscroll_on_key && pt->scroll_offs)
     vscroll_delta(pt, -pt->scroll_offs);
 
-  return FALSE;
+  return false;
 }
 
 gboolean
@@ -2349,12 +2350,12 @@ PangoTerm *pangoterm_new(int rows, int cols)
 
   pt->termwin = gtk_window_new();
   // Abe would ask: HOW
-  // gtk_widget_set_double_buffered(pt->termwin, FALSE);
+  // gtk_widget_set_double_buffered(pt->termwin, false);
   // HOW
   // gtk_widget_(pt->termwin, GTK_STATE_NORMAL, &pt->bg_col);
 
   pt->glyphs = g_string_sized_new(128);
-  pt->glyph_widths = g_array_new(FALSE, FALSE, sizeof(int));
+  pt->glyph_widths = g_array_new(false, false, sizeof(int));
 
   pt->termda = gtk_drawing_area_new();
   gtk_window_set_child (GTK_WINDOW (pt->termwin), pt->termda);
@@ -2594,7 +2595,7 @@ void pangoterm_start(PangoTerm *pt)
   // hints.width_inc  = pt->cell_width;
   // hints.height_inc = pt->cell_height;
 
-  gtk_window_set_resizable(GTK_WINDOW(pt->termwin), TRUE);
+  gtk_window_set_resizable(GTK_WINDOW(pt->termwin), true);
   // TODO: bull
   // gtk_window_set_geometry_hints(GTK_WINDOW(pt->termwin), GTK_WIDGET(pt->termwin), &hints, GDK_HINT_RESIZE_INC | GDK_HINT_MIN_SIZE);
 
